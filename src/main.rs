@@ -30,6 +30,17 @@ mod gba {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::gba;
+
+    #[test]
+    fn title() {
+        let rom = gba::ROM::from_path("test-roms/cpu_instrs.gb");
+        assert_eq!(rom.title(), "CPU_INSTRS");
+    }
+}
+
 fn main() -> Result<(), std::io::Error> {
     let args: Vec<String> = env::args().collect();
     let filename = &args[1];
