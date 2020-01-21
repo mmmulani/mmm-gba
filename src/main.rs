@@ -9,8 +9,8 @@ const NINTENDO_LOGO: [u8; 48] = [
 ];
 
 mod gba {
-    use std::fs;
     use std::cmp::Ordering;
+    use std::fs;
 
     #[derive(Debug, PartialEq, Eq)]
     enum Register {
@@ -55,7 +55,7 @@ mod gba {
                 content: match fs::read(filename) {
                     Ok(bytes) => bytes,
                     Err(_e) => vec![],
-                }
+                },
             }
         }
 
@@ -76,13 +76,18 @@ mod gba {
         pub fn opcode(&self, address: usize) -> Opcode {
             match self.content[address] {
                 0x0 => Opcode::Noop,
-                0xC3 => Opcode::Jump((self.content[address + 1] as u16) << 8 + (self.content[address + 2] as u16)),
+                0xC3 => Opcode::Jump(
+                    (self.content[address + 1] as u16) << 8 + (self.content[address + 2] as u16),
+                ),
                 _ => Opcode::Error,
             }
         }
 
         pub fn has_nintendo_logo(&self) -> bool {
-            self.content[0x104..0x134].iter().cmp(crate::NINTENDO_LOGO.iter()) == Ordering::Equal
+            self.content[0x104..0x134]
+                .iter()
+                .cmp(crate::NINTENDO_LOGO.iter())
+                == Ordering::Equal
         }
     }
 }
@@ -113,7 +118,10 @@ fn main() -> Result<(), std::io::Error> {
     println!("rom title {}", rom.title());
 
     let content = rom.bytes(0x100, 4);
-    println!("instructions {:x} {:x} {:x} {:x}", content[0], content[1], content[2], content[3]);
+    println!(
+        "instructions {:x} {:x} {:x} {:x}",
+        content[0], content[1], content[2], content[3]
+    );
 
     println!("has nintendo logo {}", rom.has_nintendo_logo());
 
