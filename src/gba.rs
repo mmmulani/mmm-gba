@@ -38,7 +38,7 @@ pub enum Opcode {
     Inc(Register, Register),
     Dec(Register, Register),
     Jump(u16),
-    Error,
+    UnimplementedOpcode(u8),
 }
 
 pub struct ROM {
@@ -73,9 +73,9 @@ impl ROM {
         match self.content[address] {
             0x0 => Opcode::Noop,
             0xC3 => Opcode::Jump(
-                ((self.content[address + 1] as u16) << 8) + (self.content[address + 2] as u16),
+               self.read_u16(address + 2)
             ),
-            _ => Opcode::Error,
+            _ => Opcode::UnimplementedOpcode(self.content[address]),
         }
     }
 
@@ -90,6 +90,10 @@ impl ROM {
             .map(|v| Wrapping(v))
             .fold(Wrapping(0), |acc, v| acc - v - Wrapping(1));
         checksum.0 == self.content[0x14D]
+    }
+
+    fn read_u16(&self, address: usize) -> u16 {
+        ((self.content[address] as u16) << 8) + (self.content[address - 1] as u16)
     }
 }
 
@@ -141,6 +145,7 @@ impl Interpreter {
     fn run_single_instruction(&mut self) -> () {
         let program_counter = self.program_state.program_counter;
         let opcode = self.rom.opcode(program_counter as usize);
+        println!("At 0x{:x}, got opcode: {:?}", program_counter, opcode);
         let mut opcode_size: Option<u16> = None;
         let mut jump_location: Option<u16> = None;
         match opcode {
@@ -148,6 +153,7 @@ impl Interpreter {
             Opcode::Jump(address) => jump_location = Some(address),
             _ => {
                 println!("unhandled opcode {:?}", opcode);
+                panic!();
             }
         }
         if opcode_size.is_some() {
