@@ -41,6 +41,17 @@ pub enum Opcode {
     UnimplementedOpcode(u8),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum MemoryBankType {
+    ROM,
+    MBC1,
+    MBC2,
+    MMM01,
+    MBC3,
+    MBC4,
+    MBC5,
+}
+
 pub struct ROM {
     content: Vec<u8>,
 }
@@ -90,6 +101,29 @@ impl ROM {
             .map(|v| Wrapping(v))
             .fold(Wrapping(0), |acc, v| acc - v - Wrapping(1));
         checksum.0 == self.content[0x14D]
+    }
+
+    pub fn cartridge_type(&self) -> MemoryBankType {
+        match self.content[0x147] {
+            0x00 | 0x08..=0x09 => MemoryBankType::ROM,
+            0x01..=0x03 => MemoryBankType::MBC1,
+            0x05..=0x06 => MemoryBankType::MBC2,
+            0x0B..=0x0D => MemoryBankType::MMM01,
+            0x0F..=0x13 => MemoryBankType::MBC3,
+            0x15..=0x17 => MemoryBankType::MBC4,
+            0x19..=0x1E => MemoryBankType::MBC5,
+            _ => panic!("unknown memory bank type"),
+        }
+    }
+
+    pub fn ram_size(&self) -> usize {
+        match self.content[0x149] {
+            0x00 => 0,
+            0x01 => 2 * 1024,
+            0x02 => 8 * 1024,
+            0x03 => 32 * 1024,
+            _ => panic!("unknown ram size"),
+        }
     }
 
     fn read_u16(&self, address: usize) -> u16 {

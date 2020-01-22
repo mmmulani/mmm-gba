@@ -14,6 +14,8 @@ mod tests {
         assert_eq!(rom.opcode(0x100), gba::Opcode::Noop);
         assert_eq!(rom.has_nintendo_logo(), true);
         assert_eq!(rom.has_valid_header_checksum(), true);
+        assert_eq!(rom.cartridge_type(), gba::MemoryBankType::MBC1);
+        assert_eq!(rom.ram_size(), 0);
     }
 }
 
@@ -36,6 +38,10 @@ fn main() -> Result<(), std::io::Error> {
     );
 
     println!("has nintendo logo {}", rom.has_nintendo_logo());
+
+    println!("memory type {:?}", rom.cartridge_type());
+
+    println!("ram size {:x}", rom.ram_size());
 
     rom.has_valid_header_checksum();
 
