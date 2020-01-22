@@ -89,11 +89,15 @@ impl ROM {
         match self.content[address] {
             0x0 => (Opcode::Noop, 1),
             0xC3 => (Opcode::Jump(immediate16), 3),
+            0x01 => (Opcode::Load16(Register::B, Register::C, immediate16), 3),
+            0x11 => (Opcode::Load16(Register::D, Register::E, immediate16), 3),
+            0x21 => (Opcode::Load16(Register::H, Register::L, immediate16), 3),
             0x31 => (Opcode::Load16(Register::SPHi, Register::SPLo, immediate16), 3),
             0x3E => (Opcode::Load8(Register::A, immediate8), 2),
             0xF3 => (Opcode::DisableInterrupts, 1),
             0xFB => (Opcode::EnableInterrupts, 1),
             0xEA => (Opcode::LoadAddress(Register::A, immediate16), 3),
+            0xE0 => (Opcode::LoadAddress(Register::A, 0xff00 + (immediate8 as u16)), 2),
             _ => (Opcode::UnimplementedOpcode(self.content[address]), 1),
         }
     }
@@ -230,7 +234,8 @@ impl Interpreter {
             return;
         }
 
-        panic!("unhandled load16");
+        self.handle_save_register(hi_register, ((value & 0xff00) >> 8) as u8);
+        self.handle_save_register(lo_register, (value & 0xff) as u8);
     }
 
     fn handle_save_register(&mut self, register: Register, value: u8) -> () {
