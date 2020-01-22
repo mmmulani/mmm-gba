@@ -35,9 +35,12 @@ pub enum Opcode {
     LoadReg(Register, Register),
     LoadHL(Register),
     LoadA(Register, Register),
+    LoadAddress(Register, u16),
     Inc(Register, Register),
     Dec(Register, Register),
     Jump(u16),
+    DisableInterrupts,
+    EnableInterrupts,
     UnimplementedOpcode(u8),
 }
 
@@ -80,13 +83,18 @@ impl ROM {
         &self.content[address..(address + length)]
     }
 
-    pub fn opcode(&self, address: usize) -> Opcode {
+    pub fn opcode(&self, address: usize) -> (Opcode, u16) {
+        let immediate8 = self.read_u8(address + 1);
+        let immediate16 = self.read_u16(address + 2);
         match self.content[address] {
-            0x0 => Opcode::Noop,
-            0xC3 => Opcode::Jump(
-               self.read_u16(address + 2)
-            ),
-            _ => Opcode::UnimplementedOpcode(self.content[address]),
+            0x0 => (Opcode::Noop, 1),
+            0xC3 => (Opcode::Jump(immediate16), 3),
+            0x31 => (Opcode::Load16(Register::SPHi, Register::SPLo, immediate16), 3),
+            0x3E => (Opcode::Load8(Register::A, immediate8), 2),
+            0xF3 => (Opcode::DisableInterrupts, 1),
+            0xFB => (Opcode::EnableInterrupts, 1),
+            0xEA => (Opcode::LoadAddress(Register::A, immediate16), 3),
+            _ => (Opcode::UnimplementedOpcode(self.content[address]), 1),
         }
     }
 
@@ -126,8 +134,16 @@ impl ROM {
         }
     }
 
+    fn read_u8(&self, address: usize) -> u8 {
+        self.content[address]
+    }
+
     fn read_u16(&self, address: usize) -> u16 {
         ((self.content[address] as u16) << 8) + (self.content[address - 1] as u16)
+    }
+
+    pub fn read_rom(&self, address: usize) -> u8 {
+        self.content[address]
     }
 }
 
@@ -178,23 +194,64 @@ impl Interpreter {
 
     fn run_single_instruction(&mut self) -> () {
         let program_counter = self.program_state.program_counter;
-        let opcode = self.rom.opcode(program_counter as usize);
+        let (opcode, opcode_size) = self.rom.opcode(program_counter as usize);
         println!("At 0x{:x}, got opcode: {:?}", program_counter, opcode);
-        let mut opcode_size: Option<u16> = None;
         let mut jump_location: Option<u16> = None;
         match opcode {
-            Opcode::Noop => opcode_size = Some(1),
+            Opcode::Noop => (),
             Opcode::Jump(address) => jump_location = Some(address),
+            Opcode::DisableInterrupts => (),
+            Opcode::EnableInterrupts => (),
+            Opcode::Load8(register, value) => {
+                self.handle_save_register(register, value);
+            }
+            Opcode::Load16(hi_register, lo_register, value) => {
+                self.handle_load16(hi_register, lo_register, value);
+            }
+            Opcode::LoadAddress(register, address) => {
+                let value = self.load_address(address);
+                self.handle_save_register(register, value);
+            }
             _ => {
                 println!("unhandled opcode {:?}", opcode);
                 panic!();
             }
         }
-        if opcode_size.is_some() {
-            self.program_state.program_counter = program_counter + opcode_size.unwrap()
-        } else if jump_location.is_some() {
+        if jump_location.is_some() {
             self.program_state.program_counter = jump_location.unwrap()
+        } else {
+            self.program_state.program_counter = program_counter + opcode_size
         }
+    }
+
+    fn handle_load16(&mut self, hi_register: Register, lo_register: Register, value: u16) -> () {
+        if hi_register == Register::SPHi && lo_register == Register::SPLo {
+            self.program_state.stack_pointer = value;
+            return;
+        }
+
+        panic!("unhandled load16");
+    }
+
+    fn handle_save_register(&mut self, register: Register, value: u8) -> () {
+        let field = match register {
+            Register::A => &mut self.register_state.a,
+            Register::B => &mut self.register_state.b,
+            Register::C => &mut self.register_state.c,
+            Register::D => &mut self.register_state.d,
+            Register::E => &mut self.register_state.e,
+            Register::F => &mut self.register_state.f,
+            Register::H => &mut self.register_state.h,
+            Register::L => &mut self.register_state.l,
+            Register::SPHi | Register::SPLo | Register::PCHi | Register::PCLo | Register::Empty => {
+                panic!("unhandled save register")
+            }
+        };
+        *field = value;
+    }
+
+    fn load_address(&self, address: u16) -> u8 {
+        self.rom.read_rom(address as usize)
     }
 
     pub fn run_program(&mut self) -> () {
