@@ -39,5 +39,8 @@ fn main() -> Result<(), std::io::Error> {
 
     rom.has_valid_header_checksum();
 
+    let mut interpreter = gba::Interpreter::with_rom(rom);
+    interpreter.run_program();
+
     Ok(())
 }

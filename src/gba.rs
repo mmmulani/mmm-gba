@@ -73,7 +73,7 @@ impl ROM {
         match self.content[address] {
             0x0 => Opcode::Noop,
             0xC3 => Opcode::Jump(
-                (self.content[address + 1] as u16) << 8 + (self.content[address + 2] as u16),
+                ((self.content[address + 1] as u16) << 8) + (self.content[address + 2] as u16),
             ),
             _ => Opcode::Error,
         }
@@ -90,5 +90,76 @@ impl ROM {
             .map(|v| Wrapping(v))
             .fold(Wrapping(0), |acc, v| acc - v - Wrapping(1));
         checksum.0 == self.content[0x14D]
+    }
+}
+
+struct RegisterState {
+    a: u8,
+    b: u8,
+    c: u8,
+    d: u8,
+    e: u8,
+    f: u8,
+    h: u8,
+    l: u8,
+}
+
+struct ProgramState {
+    stack_pointer: u16,
+    program_counter: u16,
+}
+
+pub struct Interpreter {
+    rom: ROM,
+    register_state: RegisterState,
+    program_state: ProgramState,
+    memory: Vec<u8>,
+}
+
+impl Interpreter {
+    pub fn with_rom(rom: ROM) -> Interpreter {
+        Interpreter {
+            rom,
+            register_state: RegisterState {
+                a: 0x01,
+                b: 0x00,
+                c: 0x13,
+                d: 0x00,
+                e: 0xd8,
+                f: 0xb0,
+                h: 0x01,
+                l: 0x4d,
+            },
+            program_state: ProgramState {
+                stack_pointer: 0xfffe,
+                program_counter: 0x100,
+            },
+            memory: vec![],
+        }
+    }
+
+    fn run_single_instruction(&mut self) -> () {
+        let program_counter = self.program_state.program_counter;
+        let opcode = self.rom.opcode(program_counter as usize);
+        let mut opcode_size: Option<u16> = None;
+        let mut jump_location: Option<u16> = None;
+        match opcode {
+            Opcode::Noop => opcode_size = Some(1),
+            Opcode::Jump(address) => jump_location = Some(address),
+            _ => {
+                println!("unhandled opcode {:?}", opcode);
+            }
+        }
+        if opcode_size.is_some() {
+            self.program_state.program_counter = program_counter + opcode_size.unwrap()
+        } else if jump_location.is_some() {
+            self.program_state.program_counter = jump_location.unwrap()
+        }
+    }
+
+    pub fn run_program(&mut self) -> () {
+        loop {
+            self.run_single_instruction();
+        }
     }
 }
