@@ -9,7 +9,7 @@ use std::fs;
 use std::num::Wrapping;
 
 #[derive(Debug, PartialEq, Eq)]
-enum Register {
+pub enum Register {
     A,
     B,
     C,
@@ -71,6 +71,12 @@ impl ROM {
                 Ok(bytes) => bytes,
                 Err(_e) => vec![],
             },
+        }
+    }
+
+    pub fn from_bytes(bytes: Vec<u8>) -> ROM {
+        ROM {
+            content: bytes,
         }
     }
 

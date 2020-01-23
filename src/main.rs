@@ -6,16 +6,34 @@ mod gba;
 #[cfg(test)]
 mod tests {
     use super::gba;
+    use gba::Opcode;
+    use gba::Register;
 
     #[test]
     fn test_cpu_instrs_rom() {
         let rom = gba::ROM::from_path("test-roms/cpu_instrs.gb");
         assert_eq!(rom.title(), "CPU_INSTRS");
-        assert_eq!(rom.opcode(0x100), gba::Opcode::Noop);
+        assert_eq!(rom.opcode(0x100), (gba::Opcode::Noop, 1));
         assert_eq!(rom.has_nintendo_logo(), true);
         assert_eq!(rom.has_valid_header_checksum(), true);
         assert_eq!(rom.cartridge_type(), gba::MemoryBankType::MBC1);
         assert_eq!(rom.ram_size(), 0);
+    }
+
+    fn opcode(bytes: &[u8]) -> (gba::Opcode, u16) {
+        let mut bytes = bytes.to_vec();
+        if bytes.len() < 3 {
+            bytes.resize(3, 0);
+        }
+        let rom = gba::ROM::from_bytes(bytes.to_vec());
+        rom.opcode(0)
+    }
+
+    #[test]
+    fn test_opcodes() {
+        assert_eq!(opcode(&[0x0]), (Opcode::Noop, 1));
+        assert_eq!(opcode(&[0x40]), (Opcode::LoadReg(Register::B, Register::B), 1));
+        assert_eq!(opcode(&[0x5A]), (Opcode::LoadReg(Register::E, Register::D), 1));
     }
 }
 
