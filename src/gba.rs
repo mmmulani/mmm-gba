@@ -111,6 +111,7 @@ impl ROM {
                 Opcode::LoadAddress(Register::A, 0xff00 + (immediate8 as u16)),
                 2,
             ),
+            0xC9 => (Opcode::Return, 1),
             0xCD => (Opcode::Call(immediate16), 3),
             0x76 => (Opcode::Halt, 1),
             0x40..=0x7F => (
@@ -281,6 +282,13 @@ impl Interpreter {
                 self.memory[(old_sp - 1) as usize] = ((old_pc & 0xff00) >> 8) as u8;
                 self.memory[(old_sp - 2) as usize] = (old_pc & 0x00ff) as u8;
                 self.program_state.stack_pointer = old_sp - 2;
+            }
+            Opcode::Return => {
+                let old_sp = self.program_state.stack_pointer as usize;
+                let new_pc: u16 =
+                    (self.memory[old_sp] as u16) + ((self.memory[old_sp + 1] as u16) << 8);
+                self.program_state.stack_pointer = self.program_state.stack_pointer + 2;
+                jump_location = Some(new_pc);
             }
             Opcode::LoadReg(to_register, from_register) => {
                 self.handle_save_register(to_register, self.get_register_value(from_register));
