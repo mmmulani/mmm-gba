@@ -34,6 +34,7 @@ mod tests {
         assert_eq!(opcode(&[0x0]), (Opcode::Noop, 1));
         assert_eq!(opcode(&[0x40]), (Opcode::LoadReg(Register::B, Register::B), 1));
         assert_eq!(opcode(&[0x5A]), (Opcode::LoadReg(Register::E, Register::D), 1));
+        assert_eq!(opcode(&[0x18, 0xFF]), (Opcode::JumpRelative(-1), 2));
     }
 }
 
