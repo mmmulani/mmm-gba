@@ -33,14 +33,19 @@ pub enum Opcode {
     Load16(Register, Register, u16),
     Load8(Register, u8),
     LoadReg(Register, Register),
-    LoadHL(Register),
-    LoadA(Register, Register),
     LoadAddress(Register, u16),
+    LoadAddressFromRegisters(Register, Register, Register),
+    LoadRegisterIntoMemory(Register, Register, Register),
     Inc(Register, Register),
     Dec(Register, Register),
     Jump(u16),
+    JumpRelative(i8),
     DisableInterrupts,
     EnableInterrupts,
+    Push(Register, Register),
+    Pop(Register, Register),
+    Call(u16),
+    Return,
     UnimplementedOpcode(u8),
 }
 
@@ -86,18 +91,60 @@ impl ROM {
     pub fn opcode(&self, address: usize) -> (Opcode, u16) {
         let immediate8 = self.read_u8(address + 1);
         let immediate16 = self.read_u16(address + 2);
-        match self.content[address] {
+        let opcode_value = self.content[address];
+        match opcode_value {
             0x0 => (Opcode::Noop, 1),
             0xC3 => (Opcode::Jump(immediate16), 3),
+            0x18 => (Opcode::JumpRelative(immediate8 as i8), 2),
             0x01 => (Opcode::Load16(Register::B, Register::C, immediate16), 3),
             0x11 => (Opcode::Load16(Register::D, Register::E, immediate16), 3),
             0x21 => (Opcode::Load16(Register::H, Register::L, immediate16), 3),
-            0x31 => (Opcode::Load16(Register::SPHi, Register::SPLo, immediate16), 3),
+            0x31 => (
+                Opcode::Load16(Register::SPHi, Register::SPLo, immediate16),
+                3,
+            ),
             0x3E => (Opcode::Load8(Register::A, immediate8), 2),
             0xF3 => (Opcode::DisableInterrupts, 1),
             0xFB => (Opcode::EnableInterrupts, 1),
             0xEA => (Opcode::LoadAddress(Register::A, immediate16), 3),
-            0xE0 => (Opcode::LoadAddress(Register::A, 0xff00 + (immediate8 as u16)), 2),
+            0xE0 => (
+                Opcode::LoadAddress(Register::A, 0xff00 + (immediate8 as u16)),
+                2,
+            ),
+            0xCD => (Opcode::Call(immediate16), 3),
+            0x76 => (Opcode::Halt, 1),
+            0x40..=0x7F => (
+                {
+                    let right_register = match opcode_value & 0x7 {
+                        0x0 => Register::B,
+                        0x1 => Register::C,
+                        0x2 => Register::D,
+                        0x3 => Register::E,
+                        0x4 => Register::H,
+                        0x5 => Register::L,
+                        0x7 => Register::A,
+                        _ => Register::Empty,
+                    };
+                    let left_register = match (opcode_value & 0x38) >> 3 {
+                        0x0 => Register::B,
+                        0x1 => Register::C,
+                        0x2 => Register::D,
+                        0x3 => Register::E,
+                        0x4 => Register::H,
+                        0x5 => Register::L,
+                        0x7 => Register::A,
+                        _ => Register::Empty,
+                    };
+                    if right_register == Register::Empty {
+                        Opcode::LoadAddressFromRegisters(left_register, Register::H, Register::L)
+                    } else if left_register == Register::Empty {
+                        Opcode::LoadRegisterIntoMemory(right_register, Register::H, Register::L)
+                    } else {
+                        Opcode::LoadReg(left_register, right_register)
+                    }
+                },
+                1,
+            ),
             _ => (Opcode::UnimplementedOpcode(self.content[address]), 1),
         }
     }
@@ -192,18 +239,29 @@ impl Interpreter {
                 stack_pointer: 0xfffe,
                 program_counter: 0x100,
             },
-            memory: vec![],
+            memory: vec![0; 0x10000],
         }
     }
 
     fn run_single_instruction(&mut self) -> () {
-        let program_counter = self.program_state.program_counter;
-        let (opcode, opcode_size) = self.rom.opcode(program_counter as usize);
-        println!("At 0x{:x}, got opcode: {:?}", program_counter, opcode);
+        let current_pc = self.program_state.program_counter;
+        let (opcode, opcode_size) = self.rom.opcode(current_pc as usize);
+
+        // PC should be updated before we actually run the instruction.
+        // This matters when you store return pointers on the stack.
+        self.program_state.program_counter = current_pc + opcode_size;
+
+        println!("At 0x{:x}, got opcode: {:?}", current_pc, opcode);
         let mut jump_location: Option<u16> = None;
         match opcode {
             Opcode::Noop => (),
             Opcode::Jump(address) => jump_location = Some(address),
+            Opcode::JumpRelative(relative_address) => {
+                jump_location = Some(
+                    ((self.program_state.program_counter as i32) + (relative_address as i32))
+                        as u16,
+                );
+            }
             Opcode::DisableInterrupts => (),
             Opcode::EnableInterrupts => (),
             Opcode::Load8(register, value) => {
@@ -216,6 +274,25 @@ impl Interpreter {
                 let value = self.load_address(address);
                 self.handle_save_register(register, value);
             }
+            Opcode::Call(address) => {
+                jump_location = Some(address);
+                let old_pc = self.program_state.program_counter;
+                let old_sp = self.program_state.stack_pointer;
+                self.memory[(old_sp - 1) as usize] = ((old_pc & 0xff00) >> 8) as u8;
+                self.memory[(old_sp - 2) as usize] = (old_pc & 0x00ff) as u8;
+                self.program_state.stack_pointer = old_sp - 2;
+            }
+            Opcode::LoadReg(to_register, from_register) => {
+                self.handle_save_register(to_register, self.get_register_value(from_register));
+            }
+            Opcode::LoadAddressFromRegisters(to_register, hi_addr, lo_addr) => {
+                let address = self.register_pair_to_address(hi_addr, lo_addr);
+                self.handle_save_register(to_register, self.load_address(address));
+            }
+            Opcode::LoadRegisterIntoMemory(from_register, hi_addr, lo_addr) => {
+                let address = self.register_pair_to_address(hi_addr, lo_addr);
+                self.memory[address as usize] = self.get_register_value(from_register);
+            }
             _ => {
                 println!("unhandled opcode {:?}", opcode);
                 panic!();
@@ -223,9 +300,13 @@ impl Interpreter {
         }
         if jump_location.is_some() {
             self.program_state.program_counter = jump_location.unwrap()
-        } else {
-            self.program_state.program_counter = program_counter + opcode_size
         }
+    }
+
+    fn register_pair_to_address(&self, hi_register: Register, lo_register: Register) -> u16 {
+        let hi_addr = self.get_register_value(hi_register);
+        let lo_addr = self.get_register_value(lo_register);
+        ((hi_addr as u16) << 8) + (lo_addr as u16)
     }
 
     fn handle_load16(&mut self, hi_register: Register, lo_register: Register, value: u16) -> () {
@@ -236,6 +317,22 @@ impl Interpreter {
 
         self.handle_save_register(hi_register, ((value & 0xff00) >> 8) as u8);
         self.handle_save_register(lo_register, (value & 0xff) as u8);
+    }
+
+    fn get_register_value(&self, register: Register) -> u8 {
+        match register {
+            Register::A => self.register_state.a,
+            Register::B => self.register_state.b,
+            Register::C => self.register_state.c,
+            Register::D => self.register_state.d,
+            Register::E => self.register_state.e,
+            Register::F => self.register_state.f,
+            Register::H => self.register_state.h,
+            Register::L => self.register_state.l,
+            Register::SPHi | Register::SPLo | Register::PCHi | Register::PCLo | Register::Empty => {
+                panic!("unhandled get register value");
+            }
+        }
     }
 
     fn handle_save_register(&mut self, register: Register, value: u8) -> () {
