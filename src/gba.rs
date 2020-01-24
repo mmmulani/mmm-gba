@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use std::fs;
 use std::num::Wrapping;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Register {
     A,
     B,
@@ -36,8 +36,12 @@ pub enum Opcode {
     LoadAddress(Register, u16),
     LoadAddressFromRegisters(Register, Register, Register),
     LoadRegisterIntoMemory(Register, Register, Register),
-    Inc(Register, Register),
-    Dec(Register, Register),
+    LoadHLInc(),
+    LoadHLDec(),
+    Inc(Register),
+    IncPair(Register, Register),
+    Dec(Register),
+    DecPair(Register, Register),
     Jump(u16),
     JumpRelative(i8),
     DisableInterrupts,
@@ -152,6 +156,30 @@ impl ROM {
                 },
                 1,
             ),
+            0xC5 => (Opcode::Push(Register::B, Register::C), 1),
+            0xC1 => (Opcode::Pop(Register::B, Register::C), 1),
+            0xD5 => (Opcode::Push(Register::D, Register::E), 1),
+            0xD1 => (Opcode::Pop(Register::D, Register::E), 1),
+            0xE5 => (Opcode::Push(Register::H, Register::L), 1),
+            0xE1 => (Opcode::Pop(Register::H, Register::L), 1),
+            0xF5 => (Opcode::Push(Register::A, Register::F), 1),
+            0xF1 => (Opcode::Pop(Register::A, Register::F), 1),
+            0x03 => (Opcode::IncPair(Register::B, Register::C), 1),
+            0x13 => (Opcode::IncPair(Register::D, Register::E), 1),
+            0x23 => (Opcode::IncPair(Register::H, Register::L), 1),
+            0x33 => (Opcode::IncPair(Register::SPHi, Register::SPLo), 1),
+            0x0B => (Opcode::DecPair(Register::B, Register::C), 1),
+            0x1B => (Opcode::DecPair(Register::D, Register::E), 1),
+            0x2B => (Opcode::DecPair(Register::H, Register::L), 1),
+            0x3B => (Opcode::DecPair(Register::SPHi, Register::SPLo), 1),
+            0x04 => (Opcode::Inc(Register::B), 1),
+            0x14 => (Opcode::Inc(Register::D), 1),
+            0x24 => (Opcode::Inc(Register::H), 1),
+            0x05 => (Opcode::Dec(Register::B), 1),
+            0x15 => (Opcode::Dec(Register::D), 1),
+            0x25 => (Opcode::Dec(Register::H), 1),
+            0x2A => (Opcode::LoadHLInc(), 1),
+            0x3A => (Opcode::LoadHLDec(), 1),
             _ => (Opcode::UnimplementedOpcode(self.content[address]), 1),
         }
     }
@@ -306,6 +334,33 @@ impl Interpreter {
             Opcode::LoadRegisterIntoMemory(from_register, hi_addr, lo_addr) => {
                 let address = self.register_pair_to_address(hi_addr, lo_addr);
                 self.memory[address as usize] = self.get_register_value(from_register);
+            }
+            Opcode::Push(hi_register, lo_register) => {
+                let old_sp = self.program_state.stack_pointer as usize;
+                self.memory[old_sp - 1] = self.get_register_value(hi_register);
+                self.memory[old_sp - 2] = self.get_register_value(lo_register);
+                self.program_state.stack_pointer -= 2;
+            }
+            Opcode::Pop(hi_register, lo_register) => {
+                let old_sp = self.program_state.stack_pointer as usize;
+                self.handle_save_register(lo_register, self.memory[old_sp]);
+                self.handle_save_register(hi_register, self.memory[old_sp + 1]);
+                self.program_state.stack_pointer += 2;
+            }
+            Opcode::IncPair(hi_register, lo_register) => {
+                let value = ((self.get_register_value(hi_register) as u16) << 8) + (self.get_register_value(lo_register) as u16) + 1;
+                let hi_value = ((0xff00 & value) >> 8) as u8;
+                let lo_value = (0x00ff & value) as u8;
+                self.handle_save_register(hi_register, hi_value);
+                self.handle_save_register(lo_register, lo_value);
+            }
+            Opcode::LoadHLInc() => {
+                let address = self.register_pair_to_address(Register::H, Register::L);
+                self.handle_save_register(Register::A, self.load_address(address));
+                let hi_value = ((0xff00 & (address + 1)) >> 8) as u8;
+                let lo_value = (0x00ff & (address + 1)) as u8;
+                self.handle_save_register(Register::H, hi_value);
+                self.handle_save_register(Register::L, lo_value);
             }
             _ => {
                 println!("unhandled opcode {:?}", opcode);
