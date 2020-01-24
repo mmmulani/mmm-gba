@@ -79,9 +79,7 @@ impl ROM {
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> ROM {
-        ROM {
-            content: bytes,
-        }
+        ROM { content: bytes }
     }
 
     pub fn title(&self) -> String {
@@ -247,6 +245,7 @@ struct RegisterState {
 struct ProgramState {
     stack_pointer: u16,
     program_counter: u16,
+    cycle_count: u64,
 }
 
 pub struct Interpreter {
@@ -273,6 +272,7 @@ impl Interpreter {
             program_state: ProgramState {
                 stack_pointer: 0xfffe,
                 program_counter: 0x100,
+                cycle_count: 0,
             },
             memory: vec![0; 0x10000],
         }
@@ -286,7 +286,10 @@ impl Interpreter {
         // This matters when you store return pointers on the stack.
         self.program_state.program_counter = current_pc + opcode_size;
 
-        println!("At 0x{:x}, got opcode: {:?}", current_pc, opcode);
+        println!(
+            "{}: 0x{:x}, got opcode: {:?}",
+            self.program_state.cycle_count, current_pc, opcode
+        );
         let mut jump_location: Option<u16> = None;
         match opcode {
             Opcode::Noop => (),
@@ -348,7 +351,9 @@ impl Interpreter {
                 self.program_state.stack_pointer += 2;
             }
             Opcode::IncPair(hi_register, lo_register) => {
-                let value = ((self.get_register_value(hi_register) as u16) << 8) + (self.get_register_value(lo_register) as u16) + 1;
+                let value = ((self.get_register_value(hi_register) as u16) << 8)
+                    + (self.get_register_value(lo_register) as u16)
+                    + 1;
                 let hi_value = ((0xff00 & value) >> 8) as u8;
                 let lo_value = (0x00ff & value) as u8;
                 self.handle_save_register(hi_register, hi_value);
@@ -368,8 +373,10 @@ impl Interpreter {
             }
         }
         if jump_location.is_some() {
-            self.program_state.program_counter = jump_location.unwrap()
+            self.program_state.program_counter = jump_location.unwrap();
         }
+
+        self.program_state.cycle_count += 1;
     }
 
     fn register_pair_to_address(&self, hi_register: Register, lo_register: Register) -> u16 {
