@@ -306,7 +306,7 @@ impl Interpreter {
                 self.handle_save_register(register, value);
             }
             Opcode::Load16(hi_register, lo_register, value) => {
-                self.handle_load16(hi_register, lo_register, value);
+                self.save_register_pair(hi_register, lo_register, value);
             }
             Opcode::LoadAddress(register, address) => {
                 let value = self.load_address(address);
@@ -331,11 +331,11 @@ impl Interpreter {
                 self.handle_save_register(to_register, self.get_register_value(from_register));
             }
             Opcode::LoadAddressFromRegisters(to_register, hi_addr, lo_addr) => {
-                let address = self.register_pair_to_address(hi_addr, lo_addr);
+                let address = self.register_pair_value(hi_addr, lo_addr);
                 self.handle_save_register(to_register, self.load_address(address));
             }
             Opcode::LoadRegisterIntoMemory(from_register, hi_addr, lo_addr) => {
-                let address = self.register_pair_to_address(hi_addr, lo_addr);
+                let address = self.register_pair_value(hi_addr, lo_addr);
                 self.memory[address as usize] = self.get_register_value(from_register);
             }
             Opcode::Push(hi_register, lo_register) => {
@@ -351,21 +351,13 @@ impl Interpreter {
                 self.program_state.stack_pointer += 2;
             }
             Opcode::IncPair(hi_register, lo_register) => {
-                let value = ((self.get_register_value(hi_register) as u16) << 8)
-                    + (self.get_register_value(lo_register) as u16)
-                    + 1;
-                let hi_value = ((0xff00 & value) >> 8) as u8;
-                let lo_value = (0x00ff & value) as u8;
-                self.handle_save_register(hi_register, hi_value);
-                self.handle_save_register(lo_register, lo_value);
+                let value = self.register_pair_value(hi_register, lo_register) + 1;
+                self.save_register_pair(hi_register, lo_register, value);
             }
             Opcode::LoadHLInc() => {
-                let address = self.register_pair_to_address(Register::H, Register::L);
+                let address = self.register_pair_value(Register::H, Register::L);
                 self.handle_save_register(Register::A, self.load_address(address));
-                let hi_value = ((0xff00 & (address + 1)) >> 8) as u8;
-                let lo_value = (0x00ff & (address + 1)) as u8;
-                self.handle_save_register(Register::H, hi_value);
-                self.handle_save_register(Register::L, lo_value);
+                self.save_register_pair(Register::H, Register::L, address + 1);
             }
             _ => {
                 println!("unhandled opcode {:?}", opcode);
@@ -379,13 +371,18 @@ impl Interpreter {
         self.program_state.cycle_count += 1;
     }
 
-    fn register_pair_to_address(&self, hi_register: Register, lo_register: Register) -> u16 {
+    fn register_pair_value(&self, hi_register: Register, lo_register: Register) -> u16 {
         let hi_addr = self.get_register_value(hi_register);
         let lo_addr = self.get_register_value(lo_register);
         ((hi_addr as u16) << 8) + (lo_addr as u16)
     }
 
-    fn handle_load16(&mut self, hi_register: Register, lo_register: Register, value: u16) -> () {
+    fn save_register_pair(
+        &mut self,
+        hi_register: Register,
+        lo_register: Register,
+        value: u16,
+    ) -> () {
         if hi_register == Register::SPHi && lo_register == Register::SPLo {
             self.program_state.stack_pointer = value;
             return;
