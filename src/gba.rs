@@ -336,11 +336,18 @@ struct ProgramState {
     rom_bank: u8,
 }
 
+struct Memory {
+    video_ram: Vec<u8>,
+    work_ram_0: Vec<u8>,
+    work_ram_1: Vec<u8>,
+    other_ram: Vec<u8>,
+}
+
 pub struct Interpreter {
     rom: ROM,
     register_state: RegisterState,
     program_state: ProgramState,
-    memory: Vec<u8>,
+    memory: Memory,
 }
 
 impl Interpreter {
@@ -363,7 +370,12 @@ impl Interpreter {
                 cycle_count: 0,
                 rom_bank: 0,
             },
-            memory: vec![0; 0x10000],
+            memory: Memory {
+                video_ram: vec![0; 0x2000],
+                work_ram_0: vec![0; 0x1000],
+                work_ram_1: vec![0; 0x1000],
+                other_ram: vec![0; 0x10000],
+            },
         }
     }
 
@@ -630,30 +642,24 @@ impl Interpreter {
             0x4000..=0x7FFF => self
                 .rom
                 .read_rom_bank(self.program_state.rom_bank, address as usize),
-            0x8000..=0x9FFF => panic!("unimplemented vram"),
+            0x8000..=0x9FFF => self.memory.video_ram[(address - 0x8000) as usize],
             0xA000..=0xBFFF => panic!("unimplemented external ram"),
-            // Work ram 0:
-            0xC000..=0xCFFF => self.memory[address as usize],
-            // Work ram 1:
-            // TODO: Implement CGB ram switching.
-            0xD000..=0xDFFF => self.memory[address as usize],
+            0xC000..=0xCFFF => self.memory.work_ram_0[(address - 0xC000) as usize],
+            0xD000..=0xDFFF => self.memory.work_ram_1[(address - 0xD000) as usize],
             0xE000..=0xFDFF => panic!("unimplemented echo memory"),
-            0xFE00..=0xFFFF => self.memory[address as usize],
+            0xFE00..=0xFFFF => self.memory.other_ram[address as usize],
         }
     }
 
     fn save_memory(&mut self, address: u16, value: u8) -> () {
         match address {
             0x0000..=0x7FFF => panic!("writing to rom"),
-            0x8000..=0x9FFF => panic!("unimplemented vram"),
+            0x8000..=0x9FFF => self.memory.video_ram[(address - 0x8000) as usize] = value,
             0xA000..=0xBFFF => panic!("unimplemented external ram"),
-            // Work ram 0:
-            0xC000..=0xCFFF => self.memory[address as usize] = value,
-            // Work ram 1:
-            // TODO: Implement CGB ram switching.
-            0xD000..=0xDFFF => self.memory[address as usize] = value,
+            0xC000..=0xCFFF => self.memory.work_ram_0[(address - 0xC000) as usize] = value,
+            0xD000..=0xDFFF => self.memory.work_ram_1[(address - 0xD000) as usize] = value,
             0xE000..=0xFDFF => panic!("unimplemented echo memory"),
-            0xFE00..=0xFFFF => self.memory[address as usize] = value,
+            0xFE00..=0xFFFF => self.memory.other_ram[address as usize] = value,
         }
     }
 
