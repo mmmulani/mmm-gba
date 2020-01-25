@@ -89,10 +89,18 @@ pub enum Opcode {
     And(Register),
     Xor(Register),
     Cp(Register),
+    Add(Register),
+    AddCarry(Register),
+    Sub(Register),
+    SubCarry(Register),
     AndValue(u8),
     OrValue(u8),
     XorValue(u8),
     CpValue(u8),
+    AddValue(u8),
+    AddCarryValue(u8),
+    SubValue(u8),
+    SubCarryValue(u8),
     UnimplementedOpcode(u8),
 }
 
@@ -237,6 +245,14 @@ impl ROM {
             0xEE => (Opcode::XorValue(immediate8), 2),
             0xF6 => (Opcode::OrValue(immediate8), 2),
             0xFE => (Opcode::CpValue(immediate8), 2),
+            0x80..=0x87 => (Opcode::Add(nth_register(opcode_value & 0x7)), 1),
+            0x88..=0x8F => (Opcode::AddCarry(nth_register(opcode_value & 0x7)), 1),
+            0x90..=0x97 => (Opcode::Sub(nth_register(opcode_value & 0x7)), 1),
+            0x98..=0x9F => (Opcode::SubCarry(nth_register(opcode_value & 0x7)), 1),
+            0xC6 => (Opcode::AddValue(immediate8), 2),
+            0xCE => (Opcode::AddCarryValue(immediate8), 2),
+            0xD6 => (Opcode::SubValue(immediate8), 2),
+            0xDE => (Opcode::SubCarryValue(immediate8), 2),
             _ => (Opcode::UnimplementedOpcode(self.content[address]), 1),
         }
     }
@@ -459,6 +475,10 @@ impl Interpreter {
             Opcode::AndValue(value) => self.do_and(value),
             Opcode::OrValue(value) => self.do_or(value, false),
             Opcode::XorValue(value) => self.do_or(value, true),
+            Opcode::AddValue(value) => self.do_add(value),
+            Opcode::SubValue(value) => self.do_sub(value),
+            Opcode::Add(register) => self.do_add(self.get_register_value(register)),
+            Opcode::Sub(register) => self.do_sub(self.get_register_value(register)),
             _ => {
                 println!("unhandled opcode {:?}", opcode);
                 panic!();
@@ -495,6 +515,30 @@ impl Interpreter {
         self.set_flag(FlagBit::AddSub, false);
         self.set_flag(FlagBit::HalfCarry, false);
         self.set_flag(FlagBit::Carry, false);
+    }
+
+    fn do_add(&mut self, value: u8) -> () {
+        let old_reg_value = self.get_register_value(Register::A);
+        let (new_value, did_overflow) = old_reg_value.overflowing_add(value);
+        self.handle_save_register(Register::A, new_value);
+        if new_value == 0 {
+            self.set_flag(FlagBit::Zero, true);
+        }
+        self.set_flag(FlagBit::AddSub, false);
+        self.set_half_carry_add(old_reg_value, value);
+        self.set_flag(FlagBit::Carry, did_overflow);
+    }
+
+    fn do_sub(&mut self, value: u8) -> () {
+        let old_reg_value = self.get_register_value(Register::A);
+        let (new_value, did_overflow) = old_reg_value.overflowing_sub(value);
+        self.handle_save_register(Register::A, new_value);
+        if new_value == 0 {
+            self.set_flag(FlagBit::Zero, true);
+        }
+        self.set_flag(FlagBit::AddSub, true);
+        self.set_half_carry_sub(old_reg_value, value);
+        self.set_flag(FlagBit::Carry, did_overflow);
     }
 
     fn do_call(&mut self, address: u16) -> Option<u16> {
@@ -581,6 +625,17 @@ impl Interpreter {
 
     fn set_half_carry_sub(&mut self, a: u8, b: u8) -> () {
         self.set_flag(FlagBit::HalfCarry, (a & 0xf) < (b & 0xf))
+    }
+
+    fn set_half_carry_add16(&mut self, a: u16, b: u16) -> () {
+        self.set_flag(
+            FlagBit::HalfCarry,
+            (((a & 0xff) + (b & 0xff)) & 0x100) == 0x100,
+        )
+    }
+
+    fn set_half_carry_sub16(&mut self, a: u16, b: u16) -> () {
+        self.set_flag(FlagBit::HalfCarry, (a & 0xff) < (b & 0xff))
     }
 
     fn load_address(&self, address: u16) -> u8 {
