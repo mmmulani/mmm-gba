@@ -472,11 +472,11 @@ impl Interpreter {
                 self.save_register_pair(Register::H, Register::L, address + 1);
             }
             Opcode::And(register) => self.do_and(self.get_register_value(register)),
-            Opcode::Or(register) => self.do_or(self.get_register_value(register), false),
-            Opcode::Xor(register) => self.do_or(self.get_register_value(register), true),
+            Opcode::Or(register) => self.do_or(self.get_register_value(register)),
+            Opcode::Xor(register) => self.do_xor(self.get_register_value(register)),
             Opcode::AndValue(value) => self.do_and(value),
-            Opcode::OrValue(value) => self.do_or(value, false),
-            Opcode::XorValue(value) => self.do_or(value, true),
+            Opcode::OrValue(value) => self.do_or(value),
+            Opcode::XorValue(value) => self.do_xor(value),
             Opcode::AddValue(value) => self.do_add(value),
             Opcode::SubValue(value) => self.do_sub(value),
             Opcode::Add(register) => self.do_add(self.get_register_value(register)),
@@ -499,19 +499,16 @@ impl Interpreter {
         self.apply_math_result(result);
     }
 
-    fn do_or(&mut self, value: u8, xor: bool) -> () {
-        let new_value = if xor {
-            self.get_register_value(Register::A) ^ value
-        } else {
-            self.get_register_value(Register::A) | value
-        };
-        self.handle_save_register(Register::A, new_value);
-        if new_value == 0 {
-            self.set_flag(FlagBit::Zero, true);
-        }
-        self.set_flag(FlagBit::AddSub, false);
-        self.set_flag(FlagBit::HalfCarry, false);
-        self.set_flag(FlagBit::Carry, false);
+    fn do_or(&mut self, value: u8) -> () {
+        let a = self.get_register_value(Register::A);
+        let result = math::or(a, value);
+        self.apply_math_result(result);
+    }
+
+    fn do_xor(&mut self, value: u8) -> () {
+        let a = self.get_register_value(Register::A);
+        let result = math::xor(a, value);
+        self.apply_math_result(result);
     }
 
     fn do_add(&mut self, value: u8) -> () {

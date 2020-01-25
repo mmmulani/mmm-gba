@@ -41,6 +41,28 @@ pub fn and(a: u8, b: u8) -> Result {
     }
 }
 
+pub fn or(a: u8, b: u8) -> Result {
+    let value = a | b;
+    Result {
+        value,
+        zero: Some(value == 0),
+        add_sub: Some(false),
+        half_carry: Some(false),
+        carry: Some(false),
+    }
+}
+
+pub fn xor(a: u8, b: u8) -> Result {
+    let value = a ^ b;
+    Result {
+        value,
+        zero: Some(value == 0),
+        add_sub: Some(false),
+        half_carry: Some(false),
+        carry: Some(false),
+    }
+}
+
 fn half_carry_add(a: u8, b: u8) -> bool {
     (((0xf & a) + (0xf & b)) & 0x10) == 0x10
 }
