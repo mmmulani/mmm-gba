@@ -8,6 +8,8 @@ use std::cmp::Ordering;
 use std::fs;
 use std::num::Wrapping;
 
+mod math;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Register {
     A,
@@ -492,14 +494,9 @@ impl Interpreter {
     }
 
     fn do_and(&mut self, value: u8) -> () {
-        let new_value = self.get_register_value(Register::A) & value;
-        self.handle_save_register(Register::A, new_value);
-        if new_value == 0 {
-            self.set_flag(FlagBit::Zero, true);
-        }
-        self.set_flag(FlagBit::AddSub, false);
-        self.set_flag(FlagBit::HalfCarry, true);
-        self.set_flag(FlagBit::Carry, false);
+        let a = self.get_register_value(Register::A);
+        let result = math::and(a, value);
+        self.apply_math_result(result);
     }
 
     fn do_or(&mut self, value: u8, xor: bool) -> () {
@@ -518,27 +515,31 @@ impl Interpreter {
     }
 
     fn do_add(&mut self, value: u8) -> () {
-        let old_reg_value = self.get_register_value(Register::A);
-        let (new_value, did_overflow) = old_reg_value.overflowing_add(value);
-        self.handle_save_register(Register::A, new_value);
-        if new_value == 0 {
-            self.set_flag(FlagBit::Zero, true);
-        }
-        self.set_flag(FlagBit::AddSub, false);
-        self.set_half_carry_add(old_reg_value, value);
-        self.set_flag(FlagBit::Carry, did_overflow);
+        let a = self.get_register_value(Register::A);
+        let result = math::add(a, value);
+        self.apply_math_result(result);
     }
 
     fn do_sub(&mut self, value: u8) -> () {
-        let old_reg_value = self.get_register_value(Register::A);
-        let (new_value, did_overflow) = old_reg_value.overflowing_sub(value);
-        self.handle_save_register(Register::A, new_value);
-        if new_value == 0 {
-            self.set_flag(FlagBit::Zero, true);
+        let a = self.get_register_value(Register::A);
+        let result = math::sub(a, value);
+        self.apply_math_result(result);
+    }
+
+    fn apply_math_result(&mut self, result: math::Result) {
+        self.handle_save_register(Register::A, result.value);
+        if result.zero.is_some() {
+            self.set_flag(FlagBit::Zero, result.zero.unwrap());
         }
-        self.set_flag(FlagBit::AddSub, true);
-        self.set_half_carry_sub(old_reg_value, value);
-        self.set_flag(FlagBit::Carry, did_overflow);
+        if result.add_sub.is_some() {
+            self.set_flag(FlagBit::AddSub, result.add_sub.unwrap());
+        }
+        if result.half_carry.is_some() {
+            self.set_flag(FlagBit::HalfCarry, result.half_carry.unwrap());
+        }
+        if result.carry.is_some() {
+            self.set_flag(FlagBit::Carry, result.carry.unwrap());
+        }
     }
 
     fn do_call(&mut self, address: u16) -> Option<u16> {
