@@ -475,16 +475,16 @@ impl Interpreter {
                 self.memory[address as usize] = self.get_register_value(Register::A);
                 self.save_register_pair(Register::H, Register::L, address + 1);
             }
-            Opcode::And(register) => self.do_and(self.get_register_value(register)),
-            Opcode::Or(register) => self.do_or(self.get_register_value(register)),
-            Opcode::Xor(register) => self.do_xor(self.get_register_value(register)),
+            Opcode::And(register) => self.do_math_reg(register, math::and),
+            Opcode::Or(register) => self.do_math_reg(register, math::or),
+            Opcode::Xor(register) => self.do_math_reg(register, math::xor),
             Opcode::AndValue(value) => self.do_math(value, math::and),
             Opcode::OrValue(value) => self.do_math(value, math::or),
             Opcode::XorValue(value) => self.do_math(value, math::xor),
             Opcode::AddValue(value) => self.do_math(value, math::add),
             Opcode::SubValue(value) => self.do_math(value, math::sub),
-            Opcode::Add(register) => self.do_add(self.get_register_value(register)),
-            Opcode::Sub(register) => self.do_sub(self.get_register_value(register)),
+            Opcode::Add(register) => self.do_math_reg(register, math::add),
+            Opcode::Sub(register) => self.do_math_reg(register, math::sub),
             _ => {
                 println!("unhandled opcode {:?}", opcode);
                 panic!();
@@ -497,39 +497,13 @@ impl Interpreter {
         self.program_state.cycle_count += 1;
     }
 
+    fn do_math_reg(&mut self, register: Register, f: fn(u8, u8) -> math::Result) -> () {
+        self.do_math(self.get_register_value(register), f);
+    }
+
     fn do_math(&mut self, value: u8, f: fn(u8, u8) -> math::Result) -> () {
         let a = self.get_register_value(Register::A);
         let result = f(a, value);
-        self.apply_math_result(result);
-    }
-
-    fn do_and(&mut self, value: u8) -> () {
-        let a = self.get_register_value(Register::A);
-        let result = math::and(a, value);
-        self.apply_math_result(result);
-    }
-
-    fn do_or(&mut self, value: u8) -> () {
-        let a = self.get_register_value(Register::A);
-        let result = math::or(a, value);
-        self.apply_math_result(result);
-    }
-
-    fn do_xor(&mut self, value: u8) -> () {
-        let a = self.get_register_value(Register::A);
-        let result = math::xor(a, value);
-        self.apply_math_result(result);
-    }
-
-    fn do_add(&mut self, value: u8) -> () {
-        let a = self.get_register_value(Register::A);
-        let result = math::add(a, value);
-        self.apply_math_result(result);
-    }
-
-    fn do_sub(&mut self, value: u8) -> () {
-        let a = self.get_register_value(Register::A);
-        let result = math::sub(a, value);
         self.apply_math_result(result);
     }
 
