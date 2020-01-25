@@ -1,4 +1,3 @@
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Result {
     pub value: u8,

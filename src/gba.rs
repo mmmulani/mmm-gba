@@ -312,6 +312,10 @@ impl ROM {
     pub fn read_rom(&self, address: usize) -> u8 {
         self.content[address]
     }
+
+    pub fn read_rom_bank(&self, bank: u8, address: usize) -> u8 {
+        panic!("unimplemented");
+    }
 }
 
 struct RegisterState {
@@ -329,6 +333,7 @@ struct ProgramState {
     stack_pointer: u16,
     program_counter: u16,
     cycle_count: u64,
+    rom_bank: u8,
 }
 
 pub struct Interpreter {
@@ -356,6 +361,7 @@ impl Interpreter {
                 stack_pointer: 0xfffe,
                 program_counter: 0x100,
                 cycle_count: 0,
+                rom_bank: 0,
             },
             memory: vec![0; 0x10000],
         }
@@ -405,7 +411,7 @@ impl Interpreter {
             }
             Opcode::SaveRegister(register, address) => {
                 let value = self.get_register_value(register);
-                self.memory[address as usize] = value;
+                self.save_memory(address, value);
             }
             Opcode::Call(address) => jump_location = self.do_call(address),
             Opcode::CallCond(flag, set, address) => {
@@ -414,9 +420,10 @@ impl Interpreter {
                 }
             }
             Opcode::Return => {
-                let old_sp = self.program_state.stack_pointer as usize;
-                let new_pc: u16 =
-                    (self.memory[old_sp] as u16) + ((self.memory[old_sp + 1] as u16) << 8);
+                let old_sp = self.program_state.stack_pointer;
+                println!("stack pointer {:x}", old_sp);
+                let new_pc: u16 = (self.read_memory(old_sp) as u16)
+                    + ((self.read_memory(old_sp + 1) as u16) << 8);
                 self.program_state.stack_pointer = self.program_state.stack_pointer + 2;
                 jump_location = Some(new_pc);
             }
@@ -429,22 +436,24 @@ impl Interpreter {
             }
             Opcode::LoadRegisterIntoMemory(from_register, hi_addr, lo_addr) => {
                 let address = self.register_pair_value(hi_addr, lo_addr);
-                self.memory[address as usize] = self.get_register_value(from_register);
+                self.save_memory(address, self.get_register_value(from_register));
             }
             Opcode::Push(hi_register, lo_register) => {
-                let old_sp = self.program_state.stack_pointer as usize;
-                self.memory[old_sp - 1] = self.get_register_value(hi_register);
-                self.memory[old_sp - 2] = self.get_register_value(lo_register);
+                let old_sp = self.program_state.stack_pointer;
+                self.save_memory(old_sp - 1, self.get_register_value(hi_register));
+                self.save_memory(old_sp - 2, self.get_register_value(lo_register));
                 self.program_state.stack_pointer -= 2;
             }
             Opcode::Pop(hi_register, lo_register) => {
-                let old_sp = self.program_state.stack_pointer as usize;
-                self.handle_save_register(lo_register, self.memory[old_sp]);
-                self.handle_save_register(hi_register, self.memory[old_sp + 1]);
+                let old_sp = self.program_state.stack_pointer;
+                self.handle_save_register(lo_register, self.read_memory(old_sp));
+                self.handle_save_register(hi_register, self.read_memory(old_sp + 1));
                 self.program_state.stack_pointer += 2;
             }
             Opcode::IncPair(hi_register, lo_register) => {
-                let value = self.register_pair_value(hi_register, lo_register).wrapping_add(1);
+                let value = self
+                    .register_pair_value(hi_register, lo_register)
+                    .wrapping_add(1);
                 self.save_register_pair(hi_register, lo_register, value);
             }
             Opcode::Inc(register) => {
@@ -470,7 +479,7 @@ impl Interpreter {
             }
             Opcode::SaveHLInc() => {
                 let address = self.register_pair_value(Register::H, Register::L);
-                self.memory[address as usize] = self.get_register_value(Register::A);
+                self.save_memory(address, self.get_register_value(Register::A));
                 self.save_register_pair(Register::H, Register::L, address + 1);
             }
             Opcode::LoadHLDec() => {
@@ -480,7 +489,7 @@ impl Interpreter {
             }
             Opcode::SaveHLDec() => {
                 let address = self.register_pair_value(Register::H, Register::L);
-                self.memory[address as usize] = self.get_register_value(Register::A);
+                self.save_memory(address, self.get_register_value(Register::A));
                 self.save_register_pair(Register::H, Register::L, address - 1);
             }
             Opcode::LoadHLIntoSP() => {
@@ -540,8 +549,8 @@ impl Interpreter {
     fn do_call(&mut self, address: u16) -> Option<u16> {
         let old_pc = self.program_state.program_counter;
         let old_sp = self.program_state.stack_pointer;
-        self.memory[(old_sp - 1) as usize] = ((old_pc & 0xff00) >> 8) as u8;
-        self.memory[(old_sp - 2) as usize] = (old_pc & 0x00ff) as u8;
+        self.save_memory(old_sp - 1, ((old_pc & 0xff00) >> 8) as u8);
+        self.save_memory(old_sp - 2, (old_pc & 0x00ff) as u8);
         self.program_state.stack_pointer = old_sp - 2;
         Some(address)
     }
@@ -613,6 +622,39 @@ impl Interpreter {
 
     fn get_flag(&self, flag: FlagBit) -> bool {
         self.get_register_value(Register::F) & flag_picker(flag) != 0
+    }
+
+    fn read_memory(&self, address: u16) -> u8 {
+        match address {
+            0x0000..=0x3FFF => self.rom.read_rom(address as usize),
+            0x4000..=0x7FFF => self
+                .rom
+                .read_rom_bank(self.program_state.rom_bank, address as usize),
+            0x8000..=0x9FFF => panic!("unimplemented vram"),
+            0xA000..=0xBFFF => panic!("unimplemented external ram"),
+            // Work ram 0:
+            0xC000..=0xCFFF => self.memory[address as usize],
+            // Work ram 1:
+            // TODO: Implement CGB ram switching.
+            0xD000..=0xDFFF => self.memory[address as usize],
+            0xE000..=0xFDFF => panic!("unimplemented echo memory"),
+            0xFE00..=0xFFFF => self.memory[address as usize],
+        }
+    }
+
+    fn save_memory(&mut self, address: u16, value: u8) -> () {
+        match address {
+            0x0000..=0x7FFF => panic!("writing to rom"),
+            0x8000..=0x9FFF => panic!("unimplemented vram"),
+            0xA000..=0xBFFF => panic!("unimplemented external ram"),
+            // Work ram 0:
+            0xC000..=0xCFFF => self.memory[address as usize] = value,
+            // Work ram 1:
+            // TODO: Implement CGB ram switching.
+            0xD000..=0xDFFF => self.memory[address as usize] = value,
+            0xE000..=0xFDFF => panic!("unimplemented echo memory"),
+            0xFE00..=0xFFFF => self.memory[address as usize] = value,
+        }
     }
 
     fn set_half_carry_add(&mut self, a: u8, b: u8) -> () {
