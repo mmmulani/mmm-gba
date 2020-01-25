@@ -81,9 +81,12 @@ pub enum Opcode {
     Push(Register, Register),
     Pop(Register, Register),
     Call(u16),
+    CallCond(FlagBit, bool, u16),
     Return,
     Or(Register),
     And(Register),
+    AndValue(u8),
+    OrValue(u8),
     UnimplementedOpcode(u8),
 }
 
@@ -132,16 +135,20 @@ impl ROM {
 
     pub fn opcode(&self, address: usize) -> (Opcode, u16) {
         let immediate8 = self.read_u8(address + 1);
+        let relative8 = immediate8 as i8;
         let immediate16 = self.read_u16(address + 2);
         let opcode_value = self.content[address];
         match opcode_value {
             0x0 => (Opcode::Noop, 1),
             0xC3 => (Opcode::Jump(immediate16), 3),
-            0x18 => (Opcode::JumpRelative(immediate8 as i8), 2),
-            0x20 => (Opcode::JumpRelativeCond(FlagBit::Zero, false, immediate8 as i8), 2),
-            0x28 => (Opcode::JumpRelativeCond(FlagBit::Zero, true, immediate8 as i8), 2),
-            0x30 => (Opcode::JumpRelativeCond(FlagBit::Carry, false, immediate8 as i8), 2),
-            0x38 => (Opcode::JumpRelativeCond(FlagBit::Carry, true, immediate8 as i8), 2),
+            0x18 => (Opcode::JumpRelative(relative8), 2),
+            0x20 => (Opcode::JumpRelativeCond(FlagBit::Zero, false, relative8), 2),
+            0x28 => (Opcode::JumpRelativeCond(FlagBit::Zero, true, relative8), 2),
+            0x30 => (
+                Opcode::JumpRelativeCond(FlagBit::Carry, false, relative8),
+                2,
+            ),
+            0x38 => (Opcode::JumpRelativeCond(FlagBit::Carry, true, relative8), 2),
             0x01 => (Opcode::Load16(Register::B, Register::C, immediate16), 3),
             0x11 => (Opcode::Load16(Register::D, Register::E, immediate16), 3),
             0x21 => (Opcode::Load16(Register::H, Register::L, immediate16), 3),
@@ -149,7 +156,7 @@ impl ROM {
                 Opcode::Load16(Register::SPHi, Register::SPLo, immediate16),
                 3,
             ),
-            0x3E => (Opcode::Load8(Register::A, immediate8), 2),
+            0x06 | 0x0E | 0x16 | 0x1E | 0x26 | 0x2E | 0x36 | 0x3E => (Opcode::Load8(nth_register((opcode_value & 0x38) >> 3), immediate8), 2),
             0xF3 => (Opcode::DisableInterrupts, 1),
             0xFB => (Opcode::EnableInterrupts, 1),
             0xEA => (Opcode::SaveRegister(Register::A, immediate16), 3),
@@ -160,7 +167,13 @@ impl ROM {
             ),
             0xC9 => (Opcode::Return, 1),
             0xCD => (Opcode::Call(immediate16), 3),
+            0xC4 => (Opcode::CallCond(FlagBit::Zero, false, immediate16), 3),
+            0xCC => (Opcode::CallCond(FlagBit::Zero, true, immediate16), 3),
+            0xD4 => (Opcode::CallCond(FlagBit::Carry, false, immediate16), 3),
+            0xDC => (Opcode::CallCond(FlagBit::Carry, true, immediate16), 3),
             0x76 => (Opcode::Halt, 1),
+            0x0A => (Opcode::LoadAddressFromRegisters(Register::A, Register::B, Register::C), 1),
+            0x1A => (Opcode::LoadAddressFromRegisters(Register::A, Register::D, Register::E), 1),
             0x40..=0x7F => (
                 {
                     let right_register = nth_register(opcode_value & 0x7);
@@ -191,16 +204,14 @@ impl ROM {
             0x1B => (Opcode::DecPair(Register::D, Register::E), 1),
             0x2B => (Opcode::DecPair(Register::H, Register::L), 1),
             0x3B => (Opcode::DecPair(Register::SPHi, Register::SPLo), 1),
-            0x04 => (Opcode::Inc(Register::B), 1),
-            0x14 => (Opcode::Inc(Register::D), 1),
-            0x24 => (Opcode::Inc(Register::H), 1),
-            0x05 => (Opcode::Dec(Register::B), 1),
-            0x15 => (Opcode::Dec(Register::D), 1),
-            0x25 => (Opcode::Dec(Register::H), 1),
+            0x04 | 0x0C | 0x14 | 0x1C | 0x24 | 0x2C | 0x34 | 0x3C => (Opcode::Inc(nth_register((opcode_value & 0x38) >> 3)), 1),
+            0x05 | 0x0D | 0x15 | 0x1D | 0x25 | 0x2D | 0x35 | 0x3D => (Opcode::Inc(nth_register((opcode_value & 0x38) >> 3)), 1),
             0x2A => (Opcode::LoadHLInc(), 1),
             0x3A => (Opcode::LoadHLDec(), 1),
             0xA0..=0xA7 => (Opcode::And(nth_register(opcode_value & 0x7)), 1),
             0xB0..=0xB7 => (Opcode::Or(nth_register(opcode_value & 0x7)), 1),
+            0xE6 => (Opcode::AndValue(immediate8), 2),
+            0xF6 => (Opcode::OrValue(immediate8), 2),
             _ => (Opcode::UnimplementedOpcode(self.content[address]), 1),
         }
     }
@@ -347,13 +358,11 @@ impl Interpreter {
                 let value = self.get_register_value(register);
                 self.memory[address as usize] = value;
             }
-            Opcode::Call(address) => {
-                jump_location = Some(address);
-                let old_pc = self.program_state.program_counter;
-                let old_sp = self.program_state.stack_pointer;
-                self.memory[(old_sp - 1) as usize] = ((old_pc & 0xff00) >> 8) as u8;
-                self.memory[(old_sp - 2) as usize] = (old_pc & 0x00ff) as u8;
-                self.program_state.stack_pointer = old_sp - 2;
+            Opcode::Call(address) => jump_location = self.do_call(address),
+            Opcode::CallCond(flag, set, address) => {
+                if self.get_flag(flag) == set {
+                    jump_location = self.do_call(address);
+                }
             }
             Opcode::Return => {
                 let old_sp = self.program_state.stack_pointer as usize;
@@ -389,33 +398,35 @@ impl Interpreter {
                 let value = self.register_pair_value(hi_register, lo_register) + 1;
                 self.save_register_pair(hi_register, lo_register, value);
             }
+            Opcode::Inc(register) => {
+                let old_value = self.get_register_value(register);
+                let new_value = old_value + 1;
+                if new_value == 0 {
+                    self.set_flag(FlagBit::Zero, true);
+                }
+                self.set_flag(FlagBit::AddSub, false);
+                self.set_half_carry_add(old_value, 1);
+                self.handle_save_register(register, new_value);
+            }
+            Opcode::Dec(register) => {
+                let old_value = self.get_register_value(register);
+                let new_value = old_value - 1;
+                if new_value == 0 {
+                    self.set_flag(FlagBit::Zero, true);
+                }
+                self.set_flag(FlagBit::AddSub, true);
+                self.set_half_carry_sub(old_value, 1);
+                self.handle_save_register(register, new_value);
+            }
             Opcode::LoadHLInc() => {
                 let address = self.register_pair_value(Register::H, Register::L);
                 self.handle_save_register(Register::A, self.load_address(address));
                 self.save_register_pair(Register::H, Register::L, address + 1);
             }
-            Opcode::And(register) => {
-                let new_value =
-                    self.get_register_value(Register::A) & self.get_register_value(register);
-                self.handle_save_register(Register::A, new_value);
-                if new_value == 0 {
-                    self.set_flag(FlagBit::Zero, true);
-                }
-                self.set_flag(FlagBit::AddSub, false);
-                self.set_flag(FlagBit::HalfCarry, true);
-                self.set_flag(FlagBit::Carry, false);
-            }
-            Opcode::Or(register) => {
-                let new_value =
-                    self.get_register_value(Register::A) | self.get_register_value(register);
-                self.handle_save_register(Register::A, new_value);
-                if new_value == 0 {
-                    self.set_flag(FlagBit::Zero, true);
-                }
-                self.set_flag(FlagBit::AddSub, false);
-                self.set_flag(FlagBit::HalfCarry, false);
-                self.set_flag(FlagBit::Carry, false);
-            }
+            Opcode::And(register) => self.do_and(self.get_register_value(register)),
+            Opcode::Or(register) => self.do_or(self.get_register_value(register)),
+            Opcode::AndValue(value) => self.do_and(value),
+            Opcode::OrValue(value) => self.do_or(value),
             _ => {
                 println!("unhandled opcode {:?}", opcode);
                 panic!();
@@ -426,6 +437,37 @@ impl Interpreter {
         }
 
         self.program_state.cycle_count += 1;
+    }
+
+    fn do_and(&mut self, value: u8) -> () {
+        let new_value = self.get_register_value(Register::A) & value;
+        self.handle_save_register(Register::A, new_value);
+        if new_value == 0 {
+            self.set_flag(FlagBit::Zero, true);
+        }
+        self.set_flag(FlagBit::AddSub, false);
+        self.set_flag(FlagBit::HalfCarry, true);
+        self.set_flag(FlagBit::Carry, false);
+    }
+
+    fn do_or(&mut self, value: u8) -> () {
+        let new_value = self.get_register_value(Register::A) | value;
+        self.handle_save_register(Register::A, new_value);
+        if new_value == 0 {
+            self.set_flag(FlagBit::Zero, true);
+        }
+        self.set_flag(FlagBit::AddSub, false);
+        self.set_flag(FlagBit::HalfCarry, false);
+        self.set_flag(FlagBit::Carry, false);
+    }
+
+    fn do_call(&mut self, address: u16) -> Option<u16> {
+        let old_pc = self.program_state.program_counter;
+        let old_sp = self.program_state.stack_pointer;
+        self.memory[(old_sp - 1) as usize] = ((old_pc & 0xff00) >> 8) as u8;
+        self.memory[(old_sp - 2) as usize] = (old_pc & 0x00ff) as u8;
+        self.program_state.stack_pointer = old_sp - 2;
+        Some(address)
     }
 
     fn register_pair_value(&self, hi_register: Register, lo_register: Register) -> u16 {
@@ -495,6 +537,14 @@ impl Interpreter {
 
     fn get_flag(&self, flag: FlagBit) -> bool {
         self.get_register_value(Register::F) & flag_picker(flag) != 0
+    }
+
+    fn set_half_carry_add(&mut self, a: u8, b: u8) -> () {
+        self.set_flag(FlagBit::HalfCarry, (((a & 0xf) + (b & 0xf)) & 0x10) == 0x10)
+    }
+
+    fn set_half_carry_sub(&mut self, a: u8, b: u8) -> () {
+        self.set_flag(FlagBit::HalfCarry, (a & 0xf) < (b & 0xf))
     }
 
     fn load_address(&self, address: u16) -> u8 {
