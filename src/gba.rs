@@ -68,7 +68,9 @@ pub enum Opcode {
     LoadRegisterIntoMemory(Register, Register, Register),
     SaveRegister(Register, u16),
     LoadHLInc(),
+    SaveHLInc(),
     LoadHLDec(),
+    SaveHLDec(),
     Inc(Register),
     IncPair(Register, Register),
     Dec(Register),
@@ -85,8 +87,12 @@ pub enum Opcode {
     Return,
     Or(Register),
     And(Register),
+    Xor(Register),
+    Cp(Register),
     AndValue(u8),
     OrValue(u8),
+    XorValue(u8),
+    CpValue(u8),
     UnimplementedOpcode(u8),
 }
 
@@ -156,7 +162,10 @@ impl ROM {
                 Opcode::Load16(Register::SPHi, Register::SPLo, immediate16),
                 3,
             ),
-            0x06 | 0x0E | 0x16 | 0x1E | 0x26 | 0x2E | 0x36 | 0x3E => (Opcode::Load8(nth_register((opcode_value & 0x38) >> 3), immediate8), 2),
+            0x06 | 0x0E | 0x16 | 0x1E | 0x26 | 0x2E | 0x36 | 0x3E => (
+                Opcode::Load8(nth_register((opcode_value & 0x38) >> 3), immediate8),
+                2,
+            ),
             0xF3 => (Opcode::DisableInterrupts, 1),
             0xFB => (Opcode::EnableInterrupts, 1),
             0xEA => (Opcode::SaveRegister(Register::A, immediate16), 3),
@@ -172,8 +181,14 @@ impl ROM {
             0xD4 => (Opcode::CallCond(FlagBit::Carry, false, immediate16), 3),
             0xDC => (Opcode::CallCond(FlagBit::Carry, true, immediate16), 3),
             0x76 => (Opcode::Halt, 1),
-            0x0A => (Opcode::LoadAddressFromRegisters(Register::A, Register::B, Register::C), 1),
-            0x1A => (Opcode::LoadAddressFromRegisters(Register::A, Register::D, Register::E), 1),
+            0x0A => (
+                Opcode::LoadAddressFromRegisters(Register::A, Register::B, Register::C),
+                1,
+            ),
+            0x1A => (
+                Opcode::LoadAddressFromRegisters(Register::A, Register::D, Register::E),
+                1,
+            ),
             0x40..=0x7F => (
                 {
                     let right_register = nth_register(opcode_value & 0x7);
@@ -204,14 +219,24 @@ impl ROM {
             0x1B => (Opcode::DecPair(Register::D, Register::E), 1),
             0x2B => (Opcode::DecPair(Register::H, Register::L), 1),
             0x3B => (Opcode::DecPair(Register::SPHi, Register::SPLo), 1),
-            0x04 | 0x0C | 0x14 | 0x1C | 0x24 | 0x2C | 0x34 | 0x3C => (Opcode::Inc(nth_register((opcode_value & 0x38) >> 3)), 1),
-            0x05 | 0x0D | 0x15 | 0x1D | 0x25 | 0x2D | 0x35 | 0x3D => (Opcode::Inc(nth_register((opcode_value & 0x38) >> 3)), 1),
+            0x04 | 0x0C | 0x14 | 0x1C | 0x24 | 0x2C | 0x34 | 0x3C => {
+                (Opcode::Inc(nth_register((opcode_value & 0x38) >> 3)), 1)
+            }
+            0x05 | 0x0D | 0x15 | 0x1D | 0x25 | 0x2D | 0x35 | 0x3D => {
+                (Opcode::Inc(nth_register((opcode_value & 0x38) >> 3)), 1)
+            }
+            0x22 => (Opcode::SaveHLInc(), 1),
             0x2A => (Opcode::LoadHLInc(), 1),
+            0x32 => (Opcode::SaveHLDec(), 1),
             0x3A => (Opcode::LoadHLDec(), 1),
             0xA0..=0xA7 => (Opcode::And(nth_register(opcode_value & 0x7)), 1),
+            0xA8..=0xAF => (Opcode::Xor(nth_register(opcode_value & 0x7)), 1),
             0xB0..=0xB7 => (Opcode::Or(nth_register(opcode_value & 0x7)), 1),
+            0xB8..=0xBF => (Opcode::Cp(nth_register(opcode_value & 0x7)), 1),
             0xE6 => (Opcode::AndValue(immediate8), 2),
+            0xEE => (Opcode::XorValue(immediate8), 2),
             0xF6 => (Opcode::OrValue(immediate8), 2),
+            0xFE => (Opcode::CpValue(immediate8), 2),
             _ => (Opcode::UnimplementedOpcode(self.content[address]), 1),
         }
     }
@@ -423,10 +448,17 @@ impl Interpreter {
                 self.handle_save_register(Register::A, self.load_address(address));
                 self.save_register_pair(Register::H, Register::L, address + 1);
             }
+            Opcode::SaveHLInc() => {
+                let address = self.register_pair_value(Register::H, Register::L);
+                self.memory[address as usize] = self.get_register_value(Register::A);
+                self.save_register_pair(Register::H, Register::L, address + 1);
+            }
             Opcode::And(register) => self.do_and(self.get_register_value(register)),
-            Opcode::Or(register) => self.do_or(self.get_register_value(register)),
+            Opcode::Or(register) => self.do_or(self.get_register_value(register), false),
+            Opcode::Xor(register) => self.do_or(self.get_register_value(register), true),
             Opcode::AndValue(value) => self.do_and(value),
-            Opcode::OrValue(value) => self.do_or(value),
+            Opcode::OrValue(value) => self.do_or(value, false),
+            Opcode::XorValue(value) => self.do_or(value, true),
             _ => {
                 println!("unhandled opcode {:?}", opcode);
                 panic!();
@@ -450,8 +482,12 @@ impl Interpreter {
         self.set_flag(FlagBit::Carry, false);
     }
 
-    fn do_or(&mut self, value: u8) -> () {
-        let new_value = self.get_register_value(Register::A) | value;
+    fn do_or(&mut self, value: u8, xor: bool) -> () {
+        let new_value = if xor {
+            self.get_register_value(Register::A) ^ value
+        } else {
+            self.get_register_value(Register::A) | value
+        };
         self.handle_save_register(Register::A, new_value);
         if new_value == 0 {
             self.set_flag(FlagBit::Zero, true);
