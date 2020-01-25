@@ -68,6 +68,7 @@ pub enum Opcode {
     LoadAddress(Register, u16),
     LoadAddressFromRegisters(Register, Register, Register),
     LoadRegisterIntoMemory(Register, Register, Register),
+    LoadHLIntoSP(),
     SaveRegister(Register, u16),
     LoadHLInc(),
     SaveHLInc(),
@@ -259,6 +260,7 @@ impl ROM {
             0xCE => (Opcode::AddCarryValue(immediate8), 2),
             0xD6 => (Opcode::SubValue(immediate8), 2),
             0xDE => (Opcode::SubCarryValue(immediate8), 2),
+            0xF9 => (Opcode::LoadHLIntoSP(), 1),
             _ => (Opcode::UnimplementedOpcode(self.content[address]), 1),
         }
     }
@@ -442,25 +444,21 @@ impl Interpreter {
                 self.program_state.stack_pointer += 2;
             }
             Opcode::IncPair(hi_register, lo_register) => {
-                let value = self.register_pair_value(hi_register, lo_register) + 1;
+                let value = self.register_pair_value(hi_register, lo_register).wrapping_add(1);
                 self.save_register_pair(hi_register, lo_register, value);
             }
             Opcode::Inc(register) => {
                 let old_value = self.get_register_value(register);
-                let new_value = old_value + 1;
-                if new_value == 0 {
-                    self.set_flag(FlagBit::Zero, true);
-                }
+                let new_value = old_value.wrapping_add(1);
+                self.set_flag(FlagBit::Zero, new_value == 0);
                 self.set_flag(FlagBit::AddSub, false);
                 self.set_half_carry_add(old_value, 1);
                 self.handle_save_register(register, new_value);
             }
             Opcode::Dec(register) => {
                 let old_value = self.get_register_value(register);
-                let new_value = old_value - 1;
-                if new_value == 0 {
-                    self.set_flag(FlagBit::Zero, true);
-                }
+                let new_value = old_value.wrapping_sub(1);
+                self.set_flag(FlagBit::Zero, new_value == 0);
                 self.set_flag(FlagBit::AddSub, true);
                 self.set_half_carry_sub(old_value, 1);
                 self.handle_save_register(register, new_value);
@@ -475,6 +473,20 @@ impl Interpreter {
                 self.memory[address as usize] = self.get_register_value(Register::A);
                 self.save_register_pair(Register::H, Register::L, address + 1);
             }
+            Opcode::LoadHLDec() => {
+                let address = self.register_pair_value(Register::H, Register::L);
+                self.handle_save_register(Register::A, self.load_address(address));
+                self.save_register_pair(Register::H, Register::L, address - 1);
+            }
+            Opcode::SaveHLDec() => {
+                let address = self.register_pair_value(Register::H, Register::L);
+                self.memory[address as usize] = self.get_register_value(Register::A);
+                self.save_register_pair(Register::H, Register::L, address - 1);
+            }
+            Opcode::LoadHLIntoSP() => {
+                let address = self.register_pair_value(Register::H, Register::L);
+                self.program_state.stack_pointer = address;
+            }
             Opcode::And(register) => self.do_math_reg(register, math::and),
             Opcode::Or(register) => self.do_math_reg(register, math::or),
             Opcode::Xor(register) => self.do_math_reg(register, math::xor),
@@ -483,6 +495,8 @@ impl Interpreter {
             Opcode::XorValue(value) => self.do_math(value, math::xor),
             Opcode::AddValue(value) => self.do_math(value, math::add),
             Opcode::SubValue(value) => self.do_math(value, math::sub),
+            Opcode::CpValue(value) => self.do_math(value, math::cp),
+            Opcode::Cp(register) => self.do_math_reg(register, math::cp),
             Opcode::Add(register) => self.do_math_reg(register, math::add),
             Opcode::Sub(register) => self.do_math_reg(register, math::sub),
             _ => {

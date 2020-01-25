@@ -30,6 +30,17 @@ pub fn sub(a: u8, b: u8) -> Result {
     }
 }
 
+pub fn cp(a: u8, b: u8) -> Result {
+    let (res, did_overflow) = a.overflowing_sub(b);
+    Result {
+        value: a,
+        zero: Some(res == 0),
+        add_sub: Some(true),
+        half_carry: Some(self::half_carry_sub(a, b)),
+        carry: Some(did_overflow),
+    }
+}
+
 pub fn and(a: u8, b: u8) -> Result {
     let value = a & b;
     Result {
