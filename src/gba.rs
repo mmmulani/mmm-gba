@@ -181,6 +181,10 @@ impl ROM {
             0xEA => (Opcode::SaveRegister(Register::A, immediate16), 3),
             0xFA => (Opcode::LoadAddress(Register::A, immediate16), 3),
             0xE0 => (
+                Opcode::SaveRegister(Register::A, 0xff00 + (immediate8 as u16)),
+                2,
+            ),
+            0xF0 => (
                 Opcode::LoadAddress(Register::A, 0xff00 + (immediate8 as u16)),
                 2,
             ),
@@ -474,11 +478,11 @@ impl Interpreter {
             Opcode::And(register) => self.do_and(self.get_register_value(register)),
             Opcode::Or(register) => self.do_or(self.get_register_value(register)),
             Opcode::Xor(register) => self.do_xor(self.get_register_value(register)),
-            Opcode::AndValue(value) => self.do_and(value),
-            Opcode::OrValue(value) => self.do_or(value),
-            Opcode::XorValue(value) => self.do_xor(value),
-            Opcode::AddValue(value) => self.do_add(value),
-            Opcode::SubValue(value) => self.do_sub(value),
+            Opcode::AndValue(value) => self.do_math(value, math::and),
+            Opcode::OrValue(value) => self.do_math(value, math::or),
+            Opcode::XorValue(value) => self.do_math(value, math::xor),
+            Opcode::AddValue(value) => self.do_math(value, math::add),
+            Opcode::SubValue(value) => self.do_math(value, math::sub),
             Opcode::Add(register) => self.do_add(self.get_register_value(register)),
             Opcode::Sub(register) => self.do_sub(self.get_register_value(register)),
             _ => {
@@ -491,6 +495,12 @@ impl Interpreter {
         }
 
         self.program_state.cycle_count += 1;
+    }
+
+    fn do_math(&mut self, value: u8, f: fn(u8, u8) -> math::Result) -> () {
+        let a = self.get_register_value(Register::A);
+        let result = f(a, value);
+        self.apply_math_result(result);
     }
 
     fn do_and(&mut self, value: u8) -> () {
