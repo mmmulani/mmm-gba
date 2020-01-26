@@ -4,6 +4,8 @@ use cursive::traits::*;
 use cursive::views::{DummyView, EditView, LinearLayout, SelectView, TextView};
 use cursive::Cursive;
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::env;
 use std::fs;
 
@@ -53,40 +55,17 @@ mod tests {
 fn main() -> Result<(), std::io::Error> {
     let args: Vec<String> = env::args().collect();
     let filename = &args[1];
+    let rom = gba::ROM::from_path(filename);
+    let mut interpreter = gba::Interpreter::with_rom(rom);
+    let ref_inter = Rc::new(RefCell::new(interpreter));
 
     let mut app = Cursive::default();
 
-    let code_output = TextView::new(vec![" "; 200].join("") + &vec![""; 100].join("\n"))
-        .with_name("code")
-        .scrollable()
-        .scroll_strategy(cursive::view::ScrollStrategy::StickToBottom);
-    let mut input = EditView::new();
-
-    let repl = LinearLayout::vertical()
-        .child(code_output)
-        .weight(1)
-        .child(input);
-
-    let mut sidebar = LinearLayout::vertical();
-    let mut registers = TextView::new("register output").with_name("registers");
-
-    sidebar.add_child(registers);
-
-    let panes = LinearLayout::horizontal()
-        .child(repl)
-        .weight(1)
-        .child(sidebar);
-
-    app.add_fullscreen_layer(panes);
-
-    let rom = gba::ROM::from_path(filename);
-    let mut interpreter = gba::Interpreter::with_rom(rom);
-
-    let mut update_screen = || {
+    fn update_screen(c: &mut Cursive, interpreter: &gba::Interpreter) {
         let instructions = interpreter.get_next_instructions();
         let mut first = true;
         for (address, opcode) in &instructions {
-            app.call_on_name("code", |v: &mut TextView| {
+            c.call_on_name("code", |v: &mut TextView| {
                 v.append(format!(
                     "{} 0x{:X} {:X?}\n",
                     if first { "-->" } else { "   " },
@@ -99,7 +78,7 @@ fn main() -> Result<(), std::io::Error> {
 
         let registers = interpreter.register_state;
         let program_state = interpreter.program_state;
-        app.call_on_name("registers", |v: &mut TextView| {
+        c.call_on_name("registers", |v: &mut TextView| {
             v.set_content(format!(
                 "A   F   \n\
                  {:04X}{:04X}\n\
@@ -125,9 +104,39 @@ fn main() -> Result<(), std::io::Error> {
         });
     };
 
-    update_screen();
+    let code_output = TextView::new(vec![" "; 200].join("") + &vec![""; 100].join("\n"))
+        .with_name("code")
+        .scrollable()
+        .scroll_strategy(cursive::view::ScrollStrategy::StickToBottom);
+    let mut input = EditView::new()
+        .filler(" ");
+    {
+        let ref_inter = ref_inter.clone();
+        input.set_on_submit(move |c, str| {
+            let interpreter = &mut ref_inter.borrow_mut();
+            interpreter.run_single_instruction();
+            update_screen(c, interpreter);
+        });
+    }
 
-    //interpreter.run_program();
+    let repl = LinearLayout::vertical()
+        .child(code_output)
+        .weight(1)
+        .child(input);
+
+    let mut sidebar = LinearLayout::vertical();
+    let mut registers = TextView::new("register output").with_name("registers");
+
+    sidebar.add_child(registers);
+
+    let panes = LinearLayout::horizontal()
+        .child(repl)
+        .weight(1)
+        .child(sidebar);
+
+    app.add_fullscreen_layer(panes);
+
+    update_screen(&mut app, &ref_inter.borrow_mut());
 
     app.run();
 

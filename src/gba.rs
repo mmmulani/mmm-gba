@@ -320,7 +320,7 @@ impl ROM {
     }
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct RegisterState {
     pub a: u8,
     pub b: u8,
@@ -332,7 +332,7 @@ pub struct RegisterState {
     pub l: u8,
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct ProgramState {
     pub stack_pointer: u16,
     pub program_counter: u16,
@@ -407,10 +407,6 @@ impl Interpreter {
         // This matters when you store return pointers on the stack.
         self.program_state.program_counter = current_pc + opcode_size;
 
-        println!(
-            "{}: 0x{:X}, got opcode ({:X}): {:?}",
-            self.program_state.cycle_count, current_pc, debug_opcode_value, opcode
-        );
         let mut jump_location: Option<u16> = None;
         match opcode {
             Opcode::Noop => (),
