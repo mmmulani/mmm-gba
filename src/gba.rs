@@ -7,6 +7,7 @@ const NINTENDO_LOGO: [u8; 48] = [
 use std::cmp::Ordering;
 use std::fs;
 use std::num::Wrapping;
+use std::panic;
 
 mod math;
 
@@ -318,6 +319,7 @@ impl ROM {
     }
 }
 
+#[derive(Debug)]
 struct RegisterState {
     a: u8,
     b: u8,
@@ -329,6 +331,7 @@ struct RegisterState {
     l: u8,
 }
 
+#[derive(Debug)]
 struct ProgramState {
     stack_pointer: u16,
     program_counter: u16,
@@ -341,6 +344,8 @@ struct Memory {
     work_ram_0: Vec<u8>,
     work_ram_1: Vec<u8>,
     other_ram: Vec<u8>,
+    external_ram: Vec<u8>,
+    external_ram_enabled: bool,
 }
 
 pub struct Interpreter {
@@ -375,6 +380,8 @@ impl Interpreter {
                 work_ram_0: vec![0; 0x1000],
                 work_ram_1: vec![0; 0x1000],
                 other_ram: vec![0; 0x10000],
+                external_ram: vec![0; 0x8000],
+                external_ram_enabled: false,
             },
         }
     }
@@ -382,14 +389,15 @@ impl Interpreter {
     fn run_single_instruction(&mut self) -> () {
         let current_pc = self.program_state.program_counter;
         let (opcode, opcode_size) = self.rom.opcode(current_pc as usize);
+        let debug_opcode_value = self.read_memory(current_pc);
 
         // PC should be updated before we actually run the instruction.
         // This matters when you store return pointers on the stack.
         self.program_state.program_counter = current_pc + opcode_size;
 
         println!(
-            "{}: 0x{:x}, got opcode: {:?}",
-            self.program_state.cycle_count, current_pc, opcode
+            "{}: 0x{:X}, got opcode ({:X}): {:?}",
+            self.program_state.cycle_count, current_pc, debug_opcode_value, opcode
         );
         let mut jump_location: Option<u16> = None;
         match opcode {
@@ -433,7 +441,6 @@ impl Interpreter {
             }
             Opcode::Return => {
                 let old_sp = self.program_state.stack_pointer;
-                println!("stack pointer {:x}", old_sp);
                 let new_pc: u16 = (self.read_memory(old_sp) as u16)
                     + ((self.read_memory(old_sp + 1) as u16) << 8);
                 self.program_state.stack_pointer = self.program_state.stack_pointer + 2;
@@ -643,7 +650,7 @@ impl Interpreter {
                 .rom
                 .read_rom_bank(self.program_state.rom_bank, address as usize),
             0x8000..=0x9FFF => self.memory.video_ram[(address - 0x8000) as usize],
-            0xA000..=0xBFFF => panic!("unimplemented external ram"),
+            0xA000..=0xBFFF => self.memory.external_ram[(address - 0xA000) as usize],
             0xC000..=0xCFFF => self.memory.work_ram_0[(address - 0xC000) as usize],
             0xD000..=0xDFFF => self.memory.work_ram_1[(address - 0xD000) as usize],
             0xE000..=0xFDFF => panic!("unimplemented echo memory"),
@@ -653,9 +660,16 @@ impl Interpreter {
 
     fn save_memory(&mut self, address: u16, value: u8) -> () {
         match address {
+            0xFF70 => panic!("writing to ram bank switcher"),
             0x0000..=0x7FFF => panic!("writing to rom"),
             0x8000..=0x9FFF => self.memory.video_ram[(address - 0x8000) as usize] = value,
-            0xA000..=0xBFFF => panic!("unimplemented external ram"),
+            0xA000..=0xBFFF => {
+                if self.memory.external_ram_enabled {
+                    self.memory.external_ram[(address - 0xA000) as usize] = value
+                } else {
+                    panic!("external ram disabled")
+                }
+            }
             0xC000..=0xCFFF => self.memory.work_ram_0[(address - 0xC000) as usize] = value,
             0xD000..=0xDFFF => self.memory.work_ram_1[(address - 0xD000) as usize] = value,
             0xE000..=0xFDFF => panic!("unimplemented echo memory"),
@@ -687,8 +701,14 @@ impl Interpreter {
     }
 
     pub fn run_program(&mut self) -> () {
-        loop {
-            self.run_single_instruction();
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            loop {
+                self.run_single_instruction();
+            }
+        }));
+        if result.is_err() {
+            println!("registers: {:X?}", self.register_state);
+            println!("program state: {:X?}", self.program_state);
         }
     }
 }
