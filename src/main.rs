@@ -5,9 +5,9 @@ use cursive::views::{DummyView, EditView, LinearLayout, SelectView, TextView};
 use cursive::Cursive;
 
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::env;
 use std::fs;
+use std::rc::Rc;
 
 mod gba;
 
@@ -68,7 +68,7 @@ fn main() -> Result<(), std::io::Error> {
             c.call_on_name("code", |v: &mut TextView| {
                 v.append(format!(
                     "{} 0x{:X} {:X?}\n",
-                    if first { "-->" } else { "   " },
+                    if first { "\n-->" } else { "   " },
                     address,
                     opcode
                 ));
@@ -108,14 +108,16 @@ fn main() -> Result<(), std::io::Error> {
         .with_name("code")
         .scrollable()
         .scroll_strategy(cursive::view::ScrollStrategy::StickToBottom);
-    let mut input = EditView::new()
-        .filler(" ");
+    let mut input = EditView::new().filler(" ");
     {
         let ref_inter = ref_inter.clone();
         input.set_on_submit(move |c, str| {
             let interpreter = &mut ref_inter.borrow_mut();
-            interpreter.run_single_instruction();
-            update_screen(c, interpreter);
+            loop {
+                interpreter.run_single_instruction();
+                update_screen(c, interpreter);
+                c.step();
+            }
         });
     }
 
