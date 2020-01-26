@@ -1,3 +1,9 @@
+extern crate cursive;
+
+use cursive::traits::*;
+use cursive::views::{DummyView, EditView, LinearLayout, SelectView, TextView};
+use cursive::Cursive;
+
 use std::env;
 use std::fs;
 
@@ -48,30 +54,82 @@ fn main() -> Result<(), std::io::Error> {
     let args: Vec<String> = env::args().collect();
     let filename = &args[1];
 
-    println!("Got filename {}", filename);
-    let bytes: Vec<u8> = fs::read(filename)?;
+    let mut app = Cursive::default();
 
-    println!("Hello, world! {}", bytes.len());
+    let code_output = TextView::new(vec![" "; 200].join("") + &vec![""; 100].join("\n"))
+        .with_name("code")
+        .scrollable()
+        .scroll_strategy(cursive::view::ScrollStrategy::StickToBottom);
+    let mut input = EditView::new();
+
+    let repl = LinearLayout::vertical()
+        .child(code_output)
+        .weight(1)
+        .child(input);
+
+    let mut sidebar = LinearLayout::vertical();
+    let mut registers = TextView::new("register output").with_name("registers");
+
+    sidebar.add_child(registers);
+
+    let panes = LinearLayout::horizontal()
+        .child(repl)
+        .weight(1)
+        .child(sidebar);
+
+    app.add_fullscreen_layer(panes);
 
     let rom = gba::ROM::from_path(filename);
-    println!("rom title {}", rom.title());
-
-    let content = rom.bytes(0x100, 4);
-    println!(
-        "instructions {:x} {:x} {:x} {:x}",
-        content[0], content[1], content[2], content[3]
-    );
-
-    println!("has nintendo logo {}", rom.has_nintendo_logo());
-
-    println!("memory type {:?}", rom.cartridge_type());
-
-    println!("ram size {:x}", rom.ram_size());
-
-    rom.has_valid_header_checksum();
-
     let mut interpreter = gba::Interpreter::with_rom(rom);
-    interpreter.run_program();
+
+    let mut update_screen = || {
+        let instructions = interpreter.get_next_instructions();
+        let mut first = true;
+        for (address, opcode) in &instructions {
+            app.call_on_name("code", |v: &mut TextView| {
+                v.append(format!(
+                    "{} 0x{:X} {:X?}\n",
+                    if first { "-->" } else { "   " },
+                    address,
+                    opcode
+                ));
+            });
+            first = false;
+        }
+
+        let registers = interpreter.register_state;
+        let program_state = interpreter.program_state;
+        app.call_on_name("registers", |v: &mut TextView| {
+            v.set_content(format!(
+                "A   F   \n\
+                 {:04X}{:04X}\n\
+                 B   C   \n\
+                 {:04X}{:04X}\n\
+                 D   E   \n\
+                 {:04X}{:04X}\n\
+                 H   L   \n\
+                 {:04X}{:04X}\n\
+                 SP0x{:04X}\n\
+                 PC0x{:04X}",
+                registers.a,
+                registers.f,
+                registers.b,
+                registers.c,
+                registers.d,
+                registers.e,
+                registers.h,
+                registers.l,
+                program_state.stack_pointer,
+                program_state.program_counter,
+            ));
+        });
+    };
+
+    update_screen();
+
+    //interpreter.run_program();
+
+    app.run();
 
     Ok(())
 }

@@ -5,6 +5,7 @@ const NINTENDO_LOGO: [u8; 48] = [
 ];
 
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::fs;
 use std::num::Wrapping;
 use std::panic;
@@ -320,21 +321,21 @@ impl ROM {
 }
 
 #[derive(Debug)]
-struct RegisterState {
-    a: u8,
-    b: u8,
-    c: u8,
-    d: u8,
-    e: u8,
-    f: u8,
-    h: u8,
-    l: u8,
+pub struct RegisterState {
+    pub a: u8,
+    pub b: u8,
+    pub c: u8,
+    pub d: u8,
+    pub e: u8,
+    pub f: u8,
+    pub h: u8,
+    pub l: u8,
 }
 
 #[derive(Debug)]
-struct ProgramState {
-    stack_pointer: u16,
-    program_counter: u16,
+pub struct ProgramState {
+    pub stack_pointer: u16,
+    pub program_counter: u16,
     cycle_count: u64,
     rom_bank: u8,
 }
@@ -350,8 +351,8 @@ struct Memory {
 
 pub struct Interpreter {
     rom: ROM,
-    register_state: RegisterState,
-    program_state: ProgramState,
+    pub register_state: RegisterState,
+    pub program_state: ProgramState,
     memory: Memory,
 }
 
@@ -386,7 +387,18 @@ impl Interpreter {
         }
     }
 
-    fn run_single_instruction(&mut self) -> () {
+    pub fn get_next_instructions(&self) -> BTreeMap<u16, Opcode> {
+        let mut pc = self.program_state.program_counter;
+        let mut result = BTreeMap::new();
+        for i in 0..3 {
+            let (opcode, opcode_size) = self.rom.opcode(pc as usize);
+            result.insert(pc, opcode);
+            pc += opcode_size;
+        }
+        return result;
+    }
+
+    pub fn run_single_instruction(&mut self) -> () {
         let current_pc = self.program_state.program_counter;
         let (opcode, opcode_size) = self.rom.opcode(current_pc as usize);
         let debug_opcode_value = self.read_memory(current_pc);
@@ -701,10 +713,8 @@ impl Interpreter {
     }
 
     pub fn run_program(&mut self) -> () {
-        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-            loop {
-                self.run_single_instruction();
-            }
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| loop {
+            self.run_single_instruction();
         }));
         if result.is_err() {
             println!("registers: {:X?}", self.register_state);
