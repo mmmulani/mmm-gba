@@ -116,8 +116,10 @@ pub enum Opcode {
     SRA(Register),
     Swap(Register),
     SRL(Register),
+    Bit(Register, u8),
+    Reset(Register, u8),
+    Set(Register, u8),
     UnimplementedOpcode(u8),
-    UnimplementedCBOpcode(u8),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -275,6 +277,10 @@ impl ROM {
             0xD6 => (Opcode::SubValue(immediate8), 2),
             0xDE => (Opcode::SubCarryValue(immediate8), 2),
             0xF9 => (Opcode::LoadHLIntoSP(), 1),
+            0x07 => (Opcode::RLC(Register::A), 1),
+            0x0F => (Opcode::RRC(Register::A), 1),
+            0x17 => (Opcode::RL(Register::A), 1),
+            0x1F => (Opcode::RR(Register::A), 1),
             0xCB => (self.cb_opcode(immediate8), 2),
             _ => (Opcode::UnimplementedOpcode(self.content[address]), 1),
         }
@@ -290,7 +296,9 @@ impl ROM {
             0x28..=0x2F => Opcode::SRA(nth_register(value & 0x7)),
             0x30..=0x37 => Opcode::Swap(nth_register(value & 0x7)),
             0x38..=0x3F => Opcode::SRL(nth_register(value & 0x7)),
-            _ => Opcode::UnimplementedCBOpcode(value),
+            0x40..=0x7F => Opcode::Bit(nth_register(value & 0x7), (value & 0x38) >> 3),
+            0x80..=0xBF => Opcode::Reset(nth_register(value & 0x7), (value & 0x38) >> 3),
+            0xC0..=0xFF => Opcode::Set(nth_register(value & 0x7), (value & 0x38) >> 3),
         }
     }
 
@@ -573,6 +581,23 @@ impl Interpreter {
             Opcode::SRA(register) => self.do_bit_op(register, math::sra),
             Opcode::SRL(register) => self.do_bit_op(register, math::srl),
             Opcode::Swap(register) => self.do_bit_op(register, math::swap),
+            Opcode::Bit(register, pos) => {
+                let value = self.get_register_value(register);
+                let set = (value & (0x1 << pos)) != 0x0;
+                self.set_flag(FlagBit::Zero, !set);
+                self.set_flag(FlagBit::AddSub, false);
+                self.set_flag(FlagBit::HalfCarry, true);
+            }
+            Opcode::Set(register, pos) => {
+                let value = self.get_register_value(register);
+                let new_val = value | (0x1 << pos);
+                self.handle_save_register(register, new_val);
+            }
+            Opcode::Reset(register, pos) => {
+                let value = self.get_register_value(register);
+                let new_val = value & !(0x1 << pos);
+                self.handle_save_register(register, new_val);
+            }
             _ => {
                 println!("unhandled opcode {:X?}", opcode);
                 panic!();
