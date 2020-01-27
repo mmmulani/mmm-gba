@@ -108,7 +108,16 @@ pub enum Opcode {
     AddCarryValue(u8),
     SubValue(u8),
     SubCarryValue(u8),
+    RLC(Register),
+    RRC(Register),
+    RL(Register),
+    RR(Register),
+    SLA(Register),
+    SRA(Register),
+    Swap(Register),
+    SRL(Register),
     UnimplementedOpcode(u8),
+    UnimplementedCBOpcode(u8),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -266,7 +275,22 @@ impl ROM {
             0xD6 => (Opcode::SubValue(immediate8), 2),
             0xDE => (Opcode::SubCarryValue(immediate8), 2),
             0xF9 => (Opcode::LoadHLIntoSP(), 1),
+            0xCB => (self.cb_opcode(immediate8), 2),
             _ => (Opcode::UnimplementedOpcode(self.content[address]), 1),
+        }
+    }
+
+    pub fn cb_opcode(&self, value: u8) -> Opcode {
+        match value {
+            0x00..=0x07 => Opcode::RLC(nth_register(value & 0x7)),
+            0x08..=0x0F => Opcode::RRC(nth_register(value & 0x7)),
+            0x10..=0x17 => Opcode::RL(nth_register(value & 0x7)),
+            0x18..=0x1F => Opcode::RR(nth_register(value & 0x7)),
+            0x20..=0x27 => Opcode::SLA(nth_register(value & 0x7)),
+            0x28..=0x2F => Opcode::SRA(nth_register(value & 0x7)),
+            0x30..=0x37 => Opcode::Swap(nth_register(value & 0x7)),
+            0x38..=0x3F => Opcode::SRL(nth_register(value & 0x7)),
+            _ => Opcode::UnimplementedCBOpcode(value),
         }
     }
 
@@ -541,8 +565,16 @@ impl Interpreter {
             Opcode::Cp(register) => self.do_math_reg(register, math::cp),
             Opcode::Add(register) => self.do_math_reg(register, math::add),
             Opcode::Sub(register) => self.do_math_reg(register, math::sub),
+            Opcode::RLC(register) => self.do_bit_op(register, math::rlc),
+            Opcode::RRC(register) => self.do_bit_op(register, math::rrc),
+            Opcode::RR(register) => self.do_bit_op_carry(register, math::rr),
+            Opcode::RL(register) => self.do_bit_op_carry(register, math::rl),
+            Opcode::SLA(register) => self.do_bit_op(register, math::sla),
+            Opcode::SRA(register) => self.do_bit_op(register, math::sra),
+            Opcode::SRL(register) => self.do_bit_op(register, math::srl),
+            Opcode::Swap(register) => self.do_bit_op(register, math::swap),
             _ => {
-                println!("unhandled opcode {:?}", opcode);
+                println!("unhandled opcode {:X?}", opcode);
                 panic!();
             }
         }
@@ -557,14 +589,28 @@ impl Interpreter {
         self.do_math(self.get_register_value(register), f);
     }
 
+    fn do_bit_op(&mut self, register: Register, f: fn(u8) -> math::Result) -> () {
+        let a = self.get_register_value(register);
+        let result = f(a);
+        self.handle_save_register(register, result.value);
+        self.apply_math_result_flags(result);
+    }
+
+    fn do_bit_op_carry(&mut self, register: Register, f: fn(u8, bool) -> math::Result) -> () {
+        let a = self.get_register_value(register);
+        let result = f(a, self.get_flag(FlagBit::Carry));
+        self.handle_save_register(register, result.value);
+        self.apply_math_result_flags(result);
+    }
+
     fn do_math(&mut self, value: u8, f: fn(u8, u8) -> math::Result) -> () {
         let a = self.get_register_value(Register::A);
         let result = f(a, value);
-        self.apply_math_result(result);
+        self.handle_save_register(Register::A, result.value);
+        self.apply_math_result_flags(result);
     }
 
-    fn apply_math_result(&mut self, result: math::Result) {
-        self.handle_save_register(Register::A, result.value);
+    fn apply_math_result_flags(&mut self, result: math::Result) {
         if result.zero.is_some() {
             self.set_flag(FlagBit::Zero, result.zero.unwrap());
         }
