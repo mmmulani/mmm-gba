@@ -72,12 +72,12 @@ pub enum Opcode {
     LoadAddress(Register, u16),
     LoadAddressFromRegisters(Register, Register, Register),
     LoadRegisterIntoMemory(Register, Register, Register),
-    LoadHLIntoSP(),
+    LoadHLIntoSP,
     SaveRegister(Register, u16),
-    LoadHLInc(),
-    SaveHLInc(),
-    LoadHLDec(),
-    SaveHLDec(),
+    LoadHLInc,
+    SaveHLInc,
+    LoadHLDec,
+    SaveHLDec,
     AddHL(Register, Register),
     Inc(Register),
     IncPair(Register, Register),
@@ -120,6 +120,7 @@ pub enum Opcode {
     Bit(Register, u8),
     Reset(Register, u8),
     Set(Register, u8),
+    DAA,
     UnimplementedOpcode(u8),
 }
 
@@ -178,6 +179,7 @@ impl ROM {
             0x29 => (Opcode::AddHL(Register::H, Register::L), 1),
             0x39 => (Opcode::AddHL(Register::SPHi, Register::SPLo), 1),
             0x10 => (Opcode::Stop, 1),
+            0x27 => (Opcode::DAA, 1),
             0xC3 => (Opcode::Jump(immediate16), 3),
             0x18 => (Opcode::JumpRelative(relative8), 2),
             0x20 => (Opcode::JumpRelativeCond(FlagBit::Zero, false, relative8), 2),
@@ -261,10 +263,10 @@ impl ROM {
             0x05 | 0x0D | 0x15 | 0x1D | 0x25 | 0x2D | 0x35 | 0x3D => {
                 (Opcode::Dec(nth_register((opcode_value & 0x38) >> 3)), 1)
             }
-            0x22 => (Opcode::SaveHLInc(), 1),
-            0x2A => (Opcode::LoadHLInc(), 1),
-            0x32 => (Opcode::SaveHLDec(), 1),
-            0x3A => (Opcode::LoadHLDec(), 1),
+            0x22 => (Opcode::SaveHLInc, 1),
+            0x2A => (Opcode::LoadHLInc, 1),
+            0x32 => (Opcode::SaveHLDec, 1),
+            0x3A => (Opcode::LoadHLDec, 1),
             0xA0..=0xA7 => (Opcode::And(nth_register(opcode_value & 0x7)), 1),
             0xA8..=0xAF => (Opcode::Xor(nth_register(opcode_value & 0x7)), 1),
             0xB0..=0xB7 => (Opcode::Or(nth_register(opcode_value & 0x7)), 1),
@@ -281,7 +283,7 @@ impl ROM {
             0xCE => (Opcode::AddCarryValue(immediate8), 2),
             0xD6 => (Opcode::SubValue(immediate8), 2),
             0xDE => (Opcode::SubCarryValue(immediate8), 2),
-            0xF9 => (Opcode::LoadHLIntoSP(), 1),
+            0xF9 => (Opcode::LoadHLIntoSP, 1),
             0x07 => (Opcode::RLC(Register::A), 1),
             0x0F => (Opcode::RRC(Register::A), 1),
             0x17 => (Opcode::RL(Register::A), 1),
@@ -543,6 +545,12 @@ impl Interpreter {
                 self.set_half_carry_add(old_value, 1);
                 self.handle_save_register(register, new_value);
             }
+            Opcode::DecPair(hi_register, lo_register) => {
+                let value = self
+                    .register_pair_value(hi_register, lo_register)
+                    .wrapping_sub(1);
+                self.save_register_pair(hi_register, lo_register, value);
+            }
             Opcode::Dec(register) => {
                 let old_value = self.get_register_value(register);
                 let new_value = old_value.wrapping_sub(1);
@@ -551,29 +559,39 @@ impl Interpreter {
                 self.set_half_carry_sub(old_value, 1);
                 self.handle_save_register(register, new_value);
             }
-            Opcode::LoadHLInc() => {
+            Opcode::LoadHLInc => {
                 let address = self.register_pair_value(Register::H, Register::L);
                 self.handle_save_register(Register::A, self.load_address(address));
                 self.save_register_pair(Register::H, Register::L, address + 1);
             }
-            Opcode::SaveHLInc() => {
+            Opcode::SaveHLInc => {
                 let address = self.register_pair_value(Register::H, Register::L);
                 self.save_memory(address, self.get_register_value(Register::A));
                 self.save_register_pair(Register::H, Register::L, address + 1);
             }
-            Opcode::LoadHLDec() => {
+            Opcode::LoadHLDec => {
                 let address = self.register_pair_value(Register::H, Register::L);
                 self.handle_save_register(Register::A, self.load_address(address));
                 self.save_register_pair(Register::H, Register::L, address - 1);
             }
-            Opcode::SaveHLDec() => {
+            Opcode::SaveHLDec => {
                 let address = self.register_pair_value(Register::H, Register::L);
                 self.save_memory(address, self.get_register_value(Register::A));
                 self.save_register_pair(Register::H, Register::L, address - 1);
             }
-            Opcode::LoadHLIntoSP() => {
+            Opcode::LoadHLIntoSP => {
                 let address = self.register_pair_value(Register::H, Register::L);
                 self.program_state.stack_pointer = address;
+            }
+            Opcode::DAA => {
+                let result = math::daa(
+                    self.get_register_value(Register::A),
+                    self.get_flag(FlagBit::Carry),
+                    self.get_flag(FlagBit::HalfCarry),
+                    self.get_flag(FlagBit::AddSub),
+                );
+                self.handle_save_register(Register::A, result.value);
+                self.apply_math_result_flags(result);
             }
             Opcode::And(register) => self.do_math_reg(register, math::and),
             Opcode::Or(register) => self.do_math_reg(register, math::or),
@@ -582,10 +600,12 @@ impl Interpreter {
             Opcode::OrValue(value) => self.do_math(value, math::or),
             Opcode::XorValue(value) => self.do_math(value, math::xor),
             Opcode::AddValue(value) => self.do_math(value, math::add),
+            Opcode::AddCarryValue(value) => self.do_math_carry(value, math::adc),
             Opcode::SubValue(value) => self.do_math(value, math::sub),
             Opcode::CpValue(value) => self.do_math(value, math::cp),
             Opcode::Cp(register) => self.do_math_reg(register, math::cp),
             Opcode::Add(register) => self.do_math_reg(register, math::add),
+            Opcode::AddCarry(register) => self.do_math_carry_reg(register, math::adc),
             Opcode::Sub(register) => self.do_math_reg(register, math::sub),
             Opcode::RLC(register) => self.do_bit_op(register, math::rlc),
             Opcode::RRC(register) => self.do_bit_op(register, math::rrc),
@@ -639,6 +659,17 @@ impl Interpreter {
         let a = self.get_register_value(register);
         let result = f(a, self.get_flag(FlagBit::Carry));
         self.handle_save_register(register, result.value);
+        self.apply_math_result_flags(result);
+    }
+
+    fn do_math_carry_reg(&mut self, register: Register, f: fn(u8, u8, bool) -> math::Result) -> () {
+        self.do_math_carry(self.get_register_value(register), f);
+    }
+
+    fn do_math_carry(&mut self, value: u8, f: fn(u8, u8, bool) -> math::Result) -> () {
+        let a = self.get_register_value(Register::A);
+        let result = f(a, value, self.get_flag(FlagBit::Carry));
+        self.handle_save_register(Register::A, result.value);
         self.apply_math_result_flags(result);
     }
 

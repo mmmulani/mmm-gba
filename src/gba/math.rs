@@ -190,6 +190,56 @@ pub fn rl(a: u8, carry: bool) -> Result {
     }
 }
 
+pub fn adc(a: u8, b: u8, c: bool) -> Result {
+    let c_value = if c { 1 } else { 0 };
+    let (res, did_overflow) = a.overflowing_add(b);
+    let (res2, did_overflow2) = res.overflowing_add(c_value);
+    let half_carry = (((a & 0x0f) + (b & 0x0f) + c_value) & 0x10) == 0x10;
+    Result {
+        value: res2,
+        zero: Some(res2 == 0),
+        add_sub: Some(false),
+        half_carry: Some(half_carry),
+        carry: Some(did_overflow || did_overflow2),
+    }
+}
+
+pub fn daa(a: u8, carry: bool, half: bool, subtraction: bool) -> Result {
+    if !subtraction {
+        let left = (a & 0xf0) >> 4;
+        let right = a & 0x0f;
+        let right_add = if half || right >= 0xa { 0x06 } else { 0x00 };
+        let left_add = if carry || left >= 0xa || (left >= 0x9 && right >= 0xa) {
+            0x60
+        } else {
+            0x00
+        };
+        let (value, did_overflow) = a.overflowing_add(left_add + right_add);
+        Result {
+            value,
+            zero: Some(value == 0),
+            add_sub: None,
+            half_carry: Some(false),
+            carry: Some(did_overflow),
+        }
+    } else {
+        let adder = match (carry, half) {
+            (false, false) => 0x0,
+            (false, true) => 0xFA,
+            (true, false) => 0xA0,
+            (true, true) => 0x9A,
+        };
+        let (value, did_overflow) = a.overflowing_add(adder);
+        Result {
+            value,
+            zero: Some(value == 0),
+            add_sub: None,
+            half_carry: Some(false),
+            carry: Some(did_overflow),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -536,6 +586,54 @@ mod tests {
                 value: 0x01,
                 zero: Some(false),
                 add_sub: Some(false),
+                half_carry: Some(false),
+                carry: Some(false),
+            }
+        );
+    }
+
+    #[test]
+    fn test_adc() {
+        assert_eq!(
+            adc(0xE1, 0x0F, true),
+            Result {
+                value: 0xF1,
+                zero: Some(false),
+                add_sub: Some(false),
+                half_carry: Some(true),
+                carry: Some(false),
+            }
+        );
+        assert_eq!(
+            adc(0xE1, 0x3B, true),
+            Result {
+                value: 0x1D,
+                zero: Some(false),
+                add_sub: Some(false),
+                half_carry: Some(false),
+                carry: Some(true),
+            }
+        );
+        assert_eq!(
+            adc(0xE1, 0x1E, true),
+            Result {
+                value: 0x00,
+                zero: Some(true),
+                add_sub: Some(false),
+                half_carry: Some(true),
+                carry: Some(true),
+            }
+        );
+    }
+
+    #[test]
+    fn test_daa() {
+        assert_eq!(
+            daa(0x7d, false, false, false),
+            Result {
+                value: 0x83,
+                zero: Some(false),
+                add_sub: None,
                 half_carry: Some(false),
                 carry: Some(false),
             }
