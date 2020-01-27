@@ -1,12 +1,11 @@
 extern crate cursive;
 
 use cursive::traits::*;
-use cursive::views::{DummyView, EditView, LinearLayout, SelectView, TextView};
+use cursive::views::{EditView, LinearLayout, TextView};
 use cursive::Cursive;
 
 use std::cell::RefCell;
 use std::env;
-use std::fs;
 use std::rc::Rc;
 
 mod gba;
@@ -56,8 +55,13 @@ fn main() -> Result<(), std::io::Error> {
     let args: Vec<String> = env::args().collect();
     let filename = &args[1];
     let rom = gba::ROM::from_path(filename);
-    let mut interpreter = gba::Interpreter::with_rom(rom);
+    let title = rom.title();
+    let interpreter = gba::Interpreter::with_rom(rom);
     let ref_inter = Rc::new(RefCell::new(interpreter));
+
+    ref_inter.borrow_mut().run_program();
+
+    return Ok(());
 
     let mut app = Cursive::default();
 
@@ -111,12 +115,10 @@ fn main() -> Result<(), std::io::Error> {
     let mut input = EditView::new().filler(" ");
     {
         let ref_inter = ref_inter.clone();
-        input.set_on_submit(move |c, str| {
+        input.set_on_submit(move |_c, _str| {
             let interpreter = &mut ref_inter.borrow_mut();
             loop {
                 interpreter.run_single_instruction();
-                update_screen(c, interpreter);
-                c.step();
             }
         });
     }

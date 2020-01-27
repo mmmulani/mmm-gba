@@ -159,6 +159,7 @@ impl ROM {
         let opcode_value = self.content[address];
         match opcode_value {
             0x0 => (Opcode::Noop, 1),
+            0x10 => (Opcode::Stop, 1),
             0xC3 => (Opcode::Jump(immediate16), 3),
             0x18 => (Opcode::JumpRelative(relative8), 2),
             0x20 => (Opcode::JumpRelativeCond(FlagBit::Zero, false, relative8), 2),
@@ -240,7 +241,7 @@ impl ROM {
                 (Opcode::Inc(nth_register((opcode_value & 0x38) >> 3)), 1)
             }
             0x05 | 0x0D | 0x15 | 0x1D | 0x25 | 0x2D | 0x35 | 0x3D => {
-                (Opcode::Inc(nth_register((opcode_value & 0x38) >> 3)), 1)
+                (Opcode::Dec(nth_register((opcode_value & 0x38) >> 3)), 1)
             }
             0x22 => (Opcode::SaveHLInc(), 1),
             0x2A => (Opcode::LoadHLInc(), 1),
@@ -315,7 +316,7 @@ impl ROM {
         self.content[address]
     }
 
-    pub fn read_rom_bank(&self, bank: u8, address: usize) -> u8 {
+    pub fn read_rom_bank(&self, _bank: u8, _address: usize) -> u8 {
         panic!("unimplemented");
     }
 }
@@ -358,6 +359,10 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn with_rom(rom: ROM) -> Interpreter {
+        if !rom.has_valid_header_checksum() || !rom.has_nintendo_logo() {
+            panic!("invalid header");
+        }
+        let ram_size = rom.ram_size();
         Interpreter {
             rom,
             register_state: RegisterState {
@@ -381,7 +386,7 @@ impl Interpreter {
                 work_ram_0: vec![0; 0x1000],
                 work_ram_1: vec![0; 0x1000],
                 other_ram: vec![0; 0x10000],
-                external_ram: vec![0; 0x8000],
+                external_ram: vec![0; ram_size],
                 external_ram_enabled: false,
             },
         }
@@ -390,7 +395,7 @@ impl Interpreter {
     pub fn get_next_instructions(&self) -> BTreeMap<u16, Opcode> {
         let mut pc = self.program_state.program_counter;
         let mut result = BTreeMap::new();
-        for i in 0..3 {
+        for _i in 0..3 {
             let (opcode, opcode_size) = self.rom.opcode(pc as usize);
             result.insert(pc, opcode);
             pc += opcode_size;
@@ -401,7 +406,6 @@ impl Interpreter {
     pub fn run_single_instruction(&mut self) -> () {
         let current_pc = self.program_state.program_counter;
         let (opcode, opcode_size) = self.rom.opcode(current_pc as usize);
-        let debug_opcode_value = self.read_memory(current_pc);
 
         // PC should be updated before we actually run the instruction.
         // This matters when you store return pointers on the stack.
@@ -672,7 +676,7 @@ impl Interpreter {
             0x0000..=0x7FFF => panic!("writing to rom"),
             0x8000..=0x9FFF => self.memory.video_ram[(address - 0x8000) as usize] = value,
             0xA000..=0xBFFF => {
-                if self.memory.external_ram_enabled {
+                if self.memory.external_ram_enabled && self.rom.cartridge_type() != MemoryBankType::ROM {
                     self.memory.external_ram[(address - 0xA000) as usize] = value
                 } else {
                     panic!("external ram disabled")
@@ -691,17 +695,6 @@ impl Interpreter {
 
     fn set_half_carry_sub(&mut self, a: u8, b: u8) -> () {
         self.set_flag(FlagBit::HalfCarry, (a & 0xf) < (b & 0xf))
-    }
-
-    fn set_half_carry_add16(&mut self, a: u16, b: u16) -> () {
-        self.set_flag(
-            FlagBit::HalfCarry,
-            (((a & 0xff) + (b & 0xff)) & 0x100) == 0x100,
-        )
-    }
-
-    fn set_half_carry_sub16(&mut self, a: u16, b: u16) -> () {
-        self.set_flag(FlagBit::HalfCarry, (a & 0xff) < (b & 0xff))
     }
 
     fn load_address(&self, address: u16) -> u8 {
