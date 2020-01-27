@@ -26,6 +26,7 @@ pub enum Register {
     SPLo,
     PCHi,
     PCLo,
+    SpecialLoadHL,
     Empty,
 }
 
@@ -37,6 +38,7 @@ fn nth_register(nth: u8) -> Register {
         0x3 => Register::E,
         0x4 => Register::H,
         0x5 => Register::L,
+        0x6 => Register::SpecialLoadHL,
         0x7 => Register::A,
         _ => Register::Empty,
     }
@@ -211,9 +213,9 @@ impl ROM {
                 {
                     let right_register = nth_register(opcode_value & 0x7);
                     let left_register = nth_register((opcode_value & 0x38) >> 3);
-                    if right_register == Register::Empty {
+                    if right_register == Register::SpecialLoadHL {
                         Opcode::LoadAddressFromRegisters(left_register, Register::H, Register::L)
-                    } else if left_register == Register::Empty {
+                    } else if left_register == Register::SpecialLoadHL {
                         Opcode::LoadRegisterIntoMemory(right_register, Register::H, Register::L)
                     } else {
                         Opcode::LoadReg(left_register, right_register)
@@ -617,7 +619,14 @@ impl Interpreter {
             Register::F => self.register_state.f,
             Register::H => self.register_state.h,
             Register::L => self.register_state.l,
-            Register::SPHi | Register::SPLo | Register::PCHi | Register::PCLo | Register::Empty => {
+            Register::SPHi => ((self.program_state.stack_pointer & 0xff00) >> 8) as u8,
+            Register::SPLo => (self.program_state.stack_pointer & 0x00ff) as u8,
+            Register::PCHi => ((self.program_state.program_counter & 0xff00) >> 8) as u8,
+            Register::PCLo => (self.program_state.program_counter & 0x00ff) as u8,
+            Register::SpecialLoadHL => {
+                self.read_memory(self.register_pair_value(Register::H, Register::L))
+            }
+            Register::Empty => {
                 panic!("unhandled get register value");
             }
         }
@@ -633,9 +642,12 @@ impl Interpreter {
             Register::F => &mut self.register_state.f,
             Register::H => &mut self.register_state.h,
             Register::L => &mut self.register_state.l,
-            Register::SPHi | Register::SPLo | Register::PCHi | Register::PCLo | Register::Empty => {
-                panic!("unhandled save register")
-            }
+            Register::SPHi
+            | Register::SPLo
+            | Register::PCHi
+            | Register::PCLo
+            | Register::SpecialLoadHL
+            | Register::Empty => panic!("unhandled save register"),
         };
         *field = value;
     }
@@ -676,7 +688,9 @@ impl Interpreter {
             0x0000..=0x7FFF => panic!("writing to rom"),
             0x8000..=0x9FFF => self.memory.video_ram[(address - 0x8000) as usize] = value,
             0xA000..=0xBFFF => {
-                if self.memory.external_ram_enabled && self.rom.cartridge_type() != MemoryBankType::ROM {
+                if self.memory.external_ram_enabled
+                    && self.rom.cartridge_type() != MemoryBankType::ROM
+                {
                     self.memory.external_ram[(address - 0xA000) as usize] = value
                 } else {
                     panic!("external ram disabled")
