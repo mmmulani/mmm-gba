@@ -204,6 +204,20 @@ pub fn adc(a: u8, b: u8, c: bool) -> Result {
     }
 }
 
+pub fn sbc(a: u8, b: u8, c: bool) -> Result {
+    let c_value = if c { 1 } else { 0 };
+    let (res, did_overflow) = a.overflowing_sub(b);
+    let (res2, did_overflow2) = res.overflowing_sub(c_value);
+    let half_carry = (a & 0xf) < ((b & 0xf) + c_value);
+    Result {
+        value: res2,
+        zero: Some(res2 == 0),
+        add_sub: Some(true),
+        half_carry: Some(half_carry),
+        carry: Some(did_overflow || did_overflow2),
+    }
+}
+
 pub fn daa(a: u8, carry: bool, half: bool, subtraction: bool) -> Result {
     if !subtraction {
         let left = (a & 0xf0) >> 4;
@@ -620,6 +634,40 @@ mod tests {
                 value: 0x00,
                 zero: Some(true),
                 add_sub: Some(false),
+                half_carry: Some(true),
+                carry: Some(true),
+            }
+        );
+    }
+
+    #[test]
+    fn test_sbc() {
+        assert_eq!(
+            sbc(0x3b, 0x2a, true),
+            Result {
+                value: 0x10,
+                zero: Some(false),
+                add_sub: Some(true),
+                half_carry: Some(false),
+                carry: Some(false),
+            }
+        );
+        assert_eq!(
+            sbc(0x3b, 0x3a, true),
+            Result {
+                value: 0x00,
+                zero: Some(true),
+                add_sub: Some(true),
+                half_carry: Some(false),
+                carry: Some(false),
+            }
+        );
+        assert_eq!(
+            sbc(0x3b, 0x4f, true),
+            Result {
+                value: 0xeb,
+                zero: Some(false),
+                add_sub: Some(true),
                 half_carry: Some(true),
                 carry: Some(true),
             }

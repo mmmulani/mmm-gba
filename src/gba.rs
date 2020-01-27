@@ -93,6 +93,7 @@ pub enum Opcode {
     Call(u16),
     CallCond(FlagBit, bool, u16),
     Return,
+    ReturnCond(FlagBit, bool),
     Or(Register),
     And(Register),
     Xor(Register),
@@ -120,6 +121,7 @@ pub enum Opcode {
     Bit(Register, u8),
     Reset(Register, u8),
     Set(Register, u8),
+    Restart(u16),
     DAA,
     UnimplementedOpcode(u8),
 }
@@ -174,6 +176,8 @@ impl ROM {
         let opcode_value = self.content[address];
         match opcode_value {
             0x0 => (Opcode::Noop, 1),
+            0x02 => (Opcode::LoadRegisterIntoMemory(Register::A, Register::B, Register::C), 1),
+            0x12 => (Opcode::LoadRegisterIntoMemory(Register::A, Register::D, Register::E), 1),
             0x09 => (Opcode::AddHL(Register::B, Register::C), 1),
             0x19 => (Opcode::AddHL(Register::D, Register::E), 1),
             0x29 => (Opcode::AddHL(Register::H, Register::L), 1),
@@ -213,6 +217,10 @@ impl ROM {
                 2,
             ),
             0xC9 => (Opcode::Return, 1),
+            0xC0 => (Opcode::ReturnCond(FlagBit::Zero, false), 1),
+            0xD0 => (Opcode::ReturnCond(FlagBit::Carry, false), 1),
+            0xC8 => (Opcode::ReturnCond(FlagBit::Zero, true), 1),
+            0xD8 => (Opcode::ReturnCond(FlagBit::Carry, true), 1),
             0xCD => (Opcode::Call(immediate16), 3),
             0xC4 => (Opcode::CallCond(FlagBit::Zero, false, immediate16), 3),
             0xCC => (Opcode::CallCond(FlagBit::Zero, true, immediate16), 3),
@@ -289,6 +297,10 @@ impl ROM {
             0x17 => (Opcode::RL(Register::A), 1),
             0x1F => (Opcode::RR(Register::A), 1),
             0xCB => (self.cb_opcode(immediate8), 2),
+            0xCF => (Opcode::Restart(0x08), 1),
+            0xDF => (Opcode::Restart(0x18), 1),
+            0xEF => (Opcode::Restart(0x28), 1),
+            0xFF => (Opcode::Restart(0x38), 1),
             _ => (Opcode::UnimplementedOpcode(self.content[address]), 1),
         }
     }
@@ -492,12 +504,12 @@ impl Interpreter {
                     jump_location = self.do_call(address);
                 }
             }
-            Opcode::Return => {
-                let old_sp = self.program_state.stack_pointer;
-                let new_pc: u16 = (self.read_memory(old_sp) as u16)
-                    + ((self.read_memory(old_sp + 1) as u16) << 8);
-                self.program_state.stack_pointer = self.program_state.stack_pointer + 2;
-                jump_location = Some(new_pc);
+            Opcode::Restart(address) => jump_location = self.do_call(address),
+            Opcode::Return => jump_location = self.do_return(),
+            Opcode::ReturnCond(flag, set) => {
+                if self.get_flag(flag) == set {
+                    jump_location = self.do_return();
+                }
             }
             Opcode::LoadReg(to_register, from_register) => {
                 self.handle_save_register(to_register, self.get_register_value(from_register));
@@ -601,11 +613,13 @@ impl Interpreter {
             Opcode::XorValue(value) => self.do_math(value, math::xor),
             Opcode::AddValue(value) => self.do_math(value, math::add),
             Opcode::AddCarryValue(value) => self.do_math_carry(value, math::adc),
+            Opcode::SubCarryValue(value) => self.do_math_carry(value, math::sbc),
             Opcode::SubValue(value) => self.do_math(value, math::sub),
             Opcode::CpValue(value) => self.do_math(value, math::cp),
             Opcode::Cp(register) => self.do_math_reg(register, math::cp),
             Opcode::Add(register) => self.do_math_reg(register, math::add),
             Opcode::AddCarry(register) => self.do_math_carry_reg(register, math::adc),
+            Opcode::SubCarry(register) => self.do_math_carry_reg(register, math::sbc),
             Opcode::Sub(register) => self.do_math_reg(register, math::sub),
             Opcode::RLC(register) => self.do_bit_op(register, math::rlc),
             Opcode::RRC(register) => self.do_bit_op(register, math::rrc),
@@ -704,6 +718,14 @@ impl Interpreter {
         Some(address)
     }
 
+    fn do_return(&mut self) -> Option<u16> {
+        let old_sp = self.program_state.stack_pointer;
+        let new_pc: u16 = (self.read_memory(old_sp) as u16)
+            + ((self.read_memory(old_sp + 1) as u16) << 8);
+        self.program_state.stack_pointer = self.program_state.stack_pointer + 2;
+        Some(new_pc)
+    }
+
     fn register_pair_value(&self, hi_register: Register, lo_register: Register) -> u16 {
         let hi_addr = self.get_register_value(hi_register);
         let lo_addr = self.get_register_value(lo_register);
@@ -749,23 +771,27 @@ impl Interpreter {
     }
 
     fn handle_save_register(&mut self, register: Register, value: u8) -> () {
-        let field = match register {
-            Register::A => &mut self.register_state.a,
-            Register::B => &mut self.register_state.b,
-            Register::C => &mut self.register_state.c,
-            Register::D => &mut self.register_state.d,
-            Register::E => &mut self.register_state.e,
-            Register::F => &mut self.register_state.f,
-            Register::H => &mut self.register_state.h,
-            Register::L => &mut self.register_state.l,
-            Register::SPHi
-            | Register::SPLo
-            | Register::PCHi
-            | Register::PCLo
-            | Register::SpecialLoadHL
-            | Register::Empty => panic!("unhandled save register"),
-        };
-        *field = value;
+        if register == Register::SpecialLoadHL {
+            self.save_memory(self.register_pair_value(Register::H, Register::L), value);
+        } else {
+            let field = match register {
+                Register::A => &mut self.register_state.a,
+                Register::B => &mut self.register_state.b,
+                Register::C => &mut self.register_state.c,
+                Register::D => &mut self.register_state.d,
+                Register::E => &mut self.register_state.e,
+                Register::F => &mut self.register_state.f,
+                Register::H => &mut self.register_state.h,
+                Register::L => &mut self.register_state.l,
+                Register::SPHi
+                | Register::SPLo
+                | Register::PCHi
+                | Register::PCLo
+                | Register::SpecialLoadHL
+                | Register::Empty => panic!("unhandled save register"),
+            };
+            *field = value;
+        }
     }
 
     fn set_flag(&mut self, flag: FlagBit, set: bool) -> () {
@@ -801,7 +827,21 @@ impl Interpreter {
     fn save_memory(&mut self, address: u16, value: u8) -> () {
         match address {
             0xFF70 => panic!("writing to ram bank switcher"),
-            0x0000..=0x7FFF => panic!("writing to rom"),
+            0x0000..=0x7FFF => {
+                match self.rom.cartridge_type() {
+                    MemoryBankType::MBC1 => match address {
+                        0x0000..=0x1FFF => {
+                            if (value & 0x0A) != 0 {
+                                self.memory.external_ram_enabled = true;
+                            } else {
+                                self.memory.external_ram_enabled = false;
+                            }
+                        }
+                        _ => (),
+                    },
+                    _ => panic!("({:?}) writing to rom at {:X} with value {:X}", self.rom.cartridge_type(), address, value),
+                }
+            }
             0x8000..=0x9FFF => self.memory.video_ram[(address - 0x8000) as usize] = value,
             0xA000..=0xBFFF => {
                 if self.memory.external_ram_enabled
