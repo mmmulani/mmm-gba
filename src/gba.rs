@@ -78,6 +78,7 @@ pub enum Opcode {
     SaveHLInc(),
     LoadHLDec(),
     SaveHLDec(),
+    AddHL(Register, Register),
     Inc(Register),
     IncPair(Register, Register),
     Dec(Register),
@@ -172,6 +173,10 @@ impl ROM {
         let opcode_value = self.content[address];
         match opcode_value {
             0x0 => (Opcode::Noop, 1),
+            0x09 => (Opcode::AddHL(Register::B, Register::C), 1),
+            0x19 => (Opcode::AddHL(Register::D, Register::E), 1),
+            0x29 => (Opcode::AddHL(Register::H, Register::L), 1),
+            0x39 => (Opcode::AddHL(Register::SPHi, Register::SPLo), 1),
             0x10 => (Opcode::Stop, 1),
             0xC3 => (Opcode::Jump(immediate16), 3),
             0x18 => (Opcode::JumpRelative(relative8), 2),
@@ -514,6 +519,15 @@ impl Interpreter {
                 self.handle_save_register(lo_register, self.read_memory(old_sp));
                 self.handle_save_register(hi_register, self.read_memory(old_sp + 1));
                 self.program_state.stack_pointer += 2;
+            }
+            Opcode::AddHL(hi_register, lo_register) => {
+                let a = self.register_pair_value(Register::H, Register::L);
+                let b = self.register_pair_value(hi_register, lo_register);
+                let result = math::add16(a, b);
+                self.save_register_pair(Register::H, Register::L, result.value);
+                self.set_flag(FlagBit::AddSub, result.add_sub.unwrap());
+                self.set_flag(FlagBit::Carry, result.carry.unwrap());
+                self.set_flag(FlagBit::HalfCarry, result.half_carry.unwrap());
             }
             Opcode::IncPair(hi_register, lo_register) => {
                 let value = self

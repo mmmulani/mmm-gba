@@ -7,6 +7,15 @@ pub struct Result {
     pub carry: Option<bool>,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Result16 {
+    pub value: u16,
+    pub zero: Option<bool>,
+    pub add_sub: Option<bool>,
+    pub half_carry: Option<bool>,
+    pub carry: Option<bool>,
+}
+
 pub fn add(a: u8, b: u8) -> Result {
     let (res, did_overflow) = a.overflowing_add(b);
     Result {
@@ -14,6 +23,18 @@ pub fn add(a: u8, b: u8) -> Result {
         zero: Some(res == 0),
         add_sub: Some(false),
         half_carry: Some(self::half_carry_add(a, b)),
+        carry: Some(did_overflow),
+    }
+}
+
+pub fn add16(a: u16, b: u16) -> Result16 {
+    let (res, did_overflow) = a.overflowing_add(b);
+    let half_carry = (((a & 0x0FFF) + (b & 0x0FFF)) & 0x1000) != 0;
+    Result16 {
+        value: res,
+        zero: None,
+        add_sub: Some(false),
+        half_carry: Some(half_carry),
         carry: Some(did_overflow),
     }
 }
@@ -200,6 +221,30 @@ mod tests {
             Result {
                 value: 1,
                 zero: Some(false),
+                add_sub: Some(false),
+                half_carry: Some(true),
+                carry: Some(true)
+            }
+        );
+    }
+
+    #[test]
+    fn test_add16() {
+        assert_eq!(
+            add16(0x8A23, 0x0605),
+            Result16 {
+                value: 0x9028,
+                zero: None,
+                add_sub: Some(false),
+                half_carry: Some(true),
+                carry: Some(false)
+            }
+        );
+        assert_eq!(
+            add16(0x8A23, 0x8A23),
+            Result16 {
+                value: 0x1446,
+                zero: None,
                 add_sub: Some(false),
                 half_carry: Some(true),
                 carry: Some(true)
