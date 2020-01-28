@@ -910,7 +910,7 @@ impl Interpreter {
     }
 
     fn load_address(&self, address: u16) -> u8 {
-        self.rom.read_rom(address as usize)
+        self.read_memory(address)
     }
 
     pub fn run_program(&mut self) -> () {
