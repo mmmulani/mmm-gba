@@ -802,6 +802,7 @@ impl Interpreter {
     }
 
     fn handle_save_register(&mut self, register: Register, value: u8) -> () {
+        let value = if register == Register::F { value & 0xf0 } else { value };
         if register == Register::SpecialLoadHL {
             self.save_memory(self.register_pair_value(Register::H, Register::L), value);
         } else {

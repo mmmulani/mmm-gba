@@ -20,7 +20,6 @@ mod tests {
     fn test_cpu_instrs_rom() {
         let rom = gba::ROM::from_path("test-roms/cpu_instrs.gb");
         assert_eq!(rom.title(), "CPU_INSTRS");
-        assert_eq!(rom.opcode(0x100), (gba::Opcode::Noop, 1));
         assert_eq!(rom.has_nintendo_logo(), true);
         assert_eq!(rom.has_valid_header_checksum(), true);
         assert_eq!(rom.cartridge_type(), gba::MemoryBankType::MBC1);
@@ -33,7 +32,7 @@ mod tests {
             bytes.resize(3, 0);
         }
         let rom = gba::ROM::from_bytes(bytes.to_vec());
-        rom.opcode(0)
+        rom.opcode(0, |address| { bytes[address as usize] })
     }
 
     #[test]
@@ -59,9 +58,10 @@ fn main() -> Result<(), std::io::Error> {
     let interpreter = gba::Interpreter::with_rom(rom);
     let ref_inter = Rc::new(RefCell::new(interpreter));
 
-    ref_inter.borrow_mut().run_program();
-
-    return Ok(());
+    if args.len() == 3 && args[2] == "--run" {
+        ref_inter.borrow_mut().run_program();
+        return Ok(());
+    }
 
     let mut app = Cursive::default();
 
@@ -85,15 +85,17 @@ fn main() -> Result<(), std::io::Error> {
         c.call_on_name("registers", |v: &mut TextView| {
             v.set_content(format!(
                 "A   F   \n\
-                 {:04X}{:04X}\n\
+                 {:02X}  {:02X}\n\
                  B   C   \n\
-                 {:04X}{:04X}\n\
+                 {:02X}  {:02X}\n\
                  D   E   \n\
-                 {:04X}{:04X}\n\
+                 {:02X}  {:02X}\n\
                  H   L   \n\
-                 {:04X}{:04X}\n\
+                 {:02X}  {:02X}\n\
                  SP0x{:04X}\n\
-                 PC0x{:04X}",
+                 PC0x{:04X}\n\
+                 ZNHC\n\
+                 {}{}{}{}",
                 registers.a,
                 registers.f,
                 registers.b,
@@ -104,6 +106,10 @@ fn main() -> Result<(), std::io::Error> {
                 registers.l,
                 program_state.stack_pointer,
                 program_state.program_counter,
+                ((registers.f & (1 << 7)) != 0) as u8,
+                ((registers.f & (1 << 6)) != 0) as u8,
+                ((registers.f & (1 << 5)) != 0) as u8,
+                ((registers.f & (1 << 4)) != 0) as u8,
             ));
         });
     };
@@ -115,11 +121,10 @@ fn main() -> Result<(), std::io::Error> {
     let mut input = EditView::new().filler(" ");
     {
         let ref_inter = ref_inter.clone();
-        input.set_on_submit(move |_c, _str| {
+        input.set_on_submit(move |mut c, _str| {
             let interpreter = &mut ref_inter.borrow_mut();
-            loop {
-                interpreter.run_single_instruction();
-            }
+            interpreter.run_single_instruction();
+            update_screen(&mut c, interpreter);
         });
     }
 
@@ -139,6 +144,13 @@ fn main() -> Result<(), std::io::Error> {
         .child(sidebar);
 
     app.add_fullscreen_layer(panes);
+
+    {
+        let mut interpreter = ref_inter.borrow_mut();
+        while interpreter.program_state.program_counter != 0xC325 {
+            interpreter.run_single_instruction();
+        }
+    }
 
     update_screen(&mut app, &ref_inter.borrow_mut());
 

@@ -351,6 +351,40 @@ mod tests {
     }
 
     #[test]
+    fn test_cp() {
+        assert_eq!(
+            cp(0x3C, 0x2F),
+            Result {
+                value: 0x3C,
+                zero: Some(false),
+                add_sub: Some(true),
+                half_carry: Some(true),
+                carry: Some(false),
+            }
+        );
+        assert_eq!(
+            cp(0x3C, 0x3C),
+            Result {
+                value: 0x3C,
+                zero: Some(true),
+                add_sub: Some(true),
+                half_carry: Some(false),
+                carry: Some(false),
+            }
+        );
+        assert_eq!(
+            cp(0x3C, 0x40),
+            Result {
+                value: 0x3C,
+                zero: Some(false),
+                add_sub: Some(true),
+                half_carry: Some(false),
+                carry: Some(true),
+            }
+        );
+    }
+
+    #[test]
     fn test_and() {
         assert_eq!(
             and(0x5A, 0x3F),
