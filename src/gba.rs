@@ -74,6 +74,7 @@ pub enum Opcode {
     LoadRegisterIntoMemory(Register, Register, Register),
     LoadHLIntoSP,
     SaveRegister(Register, u16),
+    SaveSP(u16),
     LoadHLInc,
     SaveHLInc,
     LoadHLDec,
@@ -170,50 +171,51 @@ impl ROM {
     }
 
     pub fn opcode(&self, address: usize) -> (Opcode, u16) {
-        let immediate8 = self.read_u8(address + 1);
-        let relative8 = immediate8 as i8;
-        let immediate16 = self.read_u16(address + 2);
+        let immediate8 = || { self.read_u8(address + 1) };
+        let relative8 = || { immediate8() as i8 };
+        let immediate16 = || { self.read_u16(address + 2) };
         let opcode_value = self.content[address];
         match opcode_value {
-            0x0 => (Opcode::Noop, 1),
+            0x00 => (Opcode::Noop, 1),
             0x02 => (Opcode::LoadRegisterIntoMemory(Register::A, Register::B, Register::C), 1),
             0x12 => (Opcode::LoadRegisterIntoMemory(Register::A, Register::D, Register::E), 1),
+            0x08 => (Opcode::SaveSP(immediate16()), 3),
             0x09 => (Opcode::AddHL(Register::B, Register::C), 1),
             0x19 => (Opcode::AddHL(Register::D, Register::E), 1),
             0x29 => (Opcode::AddHL(Register::H, Register::L), 1),
             0x39 => (Opcode::AddHL(Register::SPHi, Register::SPLo), 1),
             0x10 => (Opcode::Stop, 1),
             0x27 => (Opcode::DAA, 1),
-            0xC3 => (Opcode::Jump(immediate16), 3),
-            0x18 => (Opcode::JumpRelative(relative8), 2),
-            0x20 => (Opcode::JumpRelativeCond(FlagBit::Zero, false, relative8), 2),
-            0x28 => (Opcode::JumpRelativeCond(FlagBit::Zero, true, relative8), 2),
+            0xC3 => (Opcode::Jump(immediate16()), 3),
+            0x18 => (Opcode::JumpRelative(relative8()), 2),
+            0x20 => (Opcode::JumpRelativeCond(FlagBit::Zero, false, relative8()), 2),
+            0x28 => (Opcode::JumpRelativeCond(FlagBit::Zero, true, relative8()), 2),
             0x30 => (
-                Opcode::JumpRelativeCond(FlagBit::Carry, false, relative8),
+                Opcode::JumpRelativeCond(FlagBit::Carry, false, relative8()),
                 2,
             ),
-            0x38 => (Opcode::JumpRelativeCond(FlagBit::Carry, true, relative8), 2),
-            0x01 => (Opcode::Load16(Register::B, Register::C, immediate16), 3),
-            0x11 => (Opcode::Load16(Register::D, Register::E, immediate16), 3),
-            0x21 => (Opcode::Load16(Register::H, Register::L, immediate16), 3),
+            0x38 => (Opcode::JumpRelativeCond(FlagBit::Carry, true, relative8()), 2),
+            0x01 => (Opcode::Load16(Register::B, Register::C, immediate16()), 3),
+            0x11 => (Opcode::Load16(Register::D, Register::E, immediate16()), 3),
+            0x21 => (Opcode::Load16(Register::H, Register::L, immediate16()), 3),
             0x31 => (
-                Opcode::Load16(Register::SPHi, Register::SPLo, immediate16),
+                Opcode::Load16(Register::SPHi, Register::SPLo, immediate16()),
                 3,
             ),
             0x06 | 0x0E | 0x16 | 0x1E | 0x26 | 0x2E | 0x36 | 0x3E => (
-                Opcode::Load8(nth_register((opcode_value & 0x38) >> 3), immediate8),
+                Opcode::Load8(nth_register((opcode_value & 0x38) >> 3), immediate8()),
                 2,
             ),
             0xF3 => (Opcode::DisableInterrupts, 1),
             0xFB => (Opcode::EnableInterrupts, 1),
-            0xEA => (Opcode::SaveRegister(Register::A, immediate16), 3),
-            0xFA => (Opcode::LoadAddress(Register::A, immediate16), 3),
+            0xEA => (Opcode::SaveRegister(Register::A, immediate16()), 3),
+            0xFA => (Opcode::LoadAddress(Register::A, immediate16()), 3),
             0xE0 => (
-                Opcode::SaveRegister(Register::A, 0xff00 + (immediate8 as u16)),
+                Opcode::SaveRegister(Register::A, 0xff00 + (immediate8() as u16)),
                 2,
             ),
             0xF0 => (
-                Opcode::LoadAddress(Register::A, 0xff00 + (immediate8 as u16)),
+                Opcode::LoadAddress(Register::A, 0xff00 + (immediate8() as u16)),
                 2,
             ),
             0xC9 => (Opcode::Return, 1),
@@ -221,11 +223,11 @@ impl ROM {
             0xD0 => (Opcode::ReturnCond(FlagBit::Carry, false), 1),
             0xC8 => (Opcode::ReturnCond(FlagBit::Zero, true), 1),
             0xD8 => (Opcode::ReturnCond(FlagBit::Carry, true), 1),
-            0xCD => (Opcode::Call(immediate16), 3),
-            0xC4 => (Opcode::CallCond(FlagBit::Zero, false, immediate16), 3),
-            0xCC => (Opcode::CallCond(FlagBit::Zero, true, immediate16), 3),
-            0xD4 => (Opcode::CallCond(FlagBit::Carry, false, immediate16), 3),
-            0xDC => (Opcode::CallCond(FlagBit::Carry, true, immediate16), 3),
+            0xCD => (Opcode::Call(immediate16()), 3),
+            0xC4 => (Opcode::CallCond(FlagBit::Zero, false, immediate16()), 3),
+            0xCC => (Opcode::CallCond(FlagBit::Zero, true, immediate16()), 3),
+            0xD4 => (Opcode::CallCond(FlagBit::Carry, false, immediate16()), 3),
+            0xDC => (Opcode::CallCond(FlagBit::Carry, true, immediate16()), 3),
             0x76 => (Opcode::Halt, 1),
             0x0A => (
                 Opcode::LoadAddressFromRegisters(Register::A, Register::B, Register::C),
@@ -279,24 +281,24 @@ impl ROM {
             0xA8..=0xAF => (Opcode::Xor(nth_register(opcode_value & 0x7)), 1),
             0xB0..=0xB7 => (Opcode::Or(nth_register(opcode_value & 0x7)), 1),
             0xB8..=0xBF => (Opcode::Cp(nth_register(opcode_value & 0x7)), 1),
-            0xE6 => (Opcode::AndValue(immediate8), 2),
-            0xEE => (Opcode::XorValue(immediate8), 2),
-            0xF6 => (Opcode::OrValue(immediate8), 2),
-            0xFE => (Opcode::CpValue(immediate8), 2),
+            0xE6 => (Opcode::AndValue(immediate8()), 2),
+            0xEE => (Opcode::XorValue(immediate8()), 2),
+            0xF6 => (Opcode::OrValue(immediate8()), 2),
+            0xFE => (Opcode::CpValue(immediate8()), 2),
             0x80..=0x87 => (Opcode::Add(nth_register(opcode_value & 0x7)), 1),
             0x88..=0x8F => (Opcode::AddCarry(nth_register(opcode_value & 0x7)), 1),
             0x90..=0x97 => (Opcode::Sub(nth_register(opcode_value & 0x7)), 1),
             0x98..=0x9F => (Opcode::SubCarry(nth_register(opcode_value & 0x7)), 1),
-            0xC6 => (Opcode::AddValue(immediate8), 2),
-            0xCE => (Opcode::AddCarryValue(immediate8), 2),
-            0xD6 => (Opcode::SubValue(immediate8), 2),
-            0xDE => (Opcode::SubCarryValue(immediate8), 2),
+            0xC6 => (Opcode::AddValue(immediate8()), 2),
+            0xCE => (Opcode::AddCarryValue(immediate8()), 2),
+            0xD6 => (Opcode::SubValue(immediate8()), 2),
+            0xDE => (Opcode::SubCarryValue(immediate8()), 2),
             0xF9 => (Opcode::LoadHLIntoSP, 1),
             0x07 => (Opcode::RLC(Register::A), 1),
             0x0F => (Opcode::RRC(Register::A), 1),
             0x17 => (Opcode::RL(Register::A), 1),
             0x1F => (Opcode::RR(Register::A), 1),
-            0xCB => (self.cb_opcode(immediate8), 2),
+            0xCB => (self.cb_opcode(immediate8()), 2),
             0xCF => (Opcode::Restart(0x08), 1),
             0xDF => (Opcode::Restart(0x18), 1),
             0xEF => (Opcode::Restart(0x28), 1),
@@ -581,6 +583,12 @@ impl Interpreter {
                 self.save_memory(address, self.get_register_value(Register::A));
                 self.save_register_pair(Register::H, Register::L, address + 1);
             }
+            Opcode::SaveSP(address) => {
+                let lower = (self.program_state.stack_pointer & 0xff) as u8;
+                let upper = ((self.program_state.stack_pointer & 0xff00) >> 8) as u8;
+                self.save_memory(address, lower);
+                self.save_memory(address + 1, upper);
+            }
             Opcode::LoadHLDec => {
                 let address = self.register_pair_value(Register::H, Register::L);
                 self.handle_save_register(Register::A, self.load_address(address));
@@ -854,7 +862,9 @@ impl Interpreter {
             }
             0xC000..=0xCFFF => self.memory.work_ram_0[(address - 0xC000) as usize] = value,
             0xD000..=0xDFFF => self.memory.work_ram_1[(address - 0xD000) as usize] = value,
-            0xE000..=0xFDFF => panic!("unimplemented echo memory"),
+            0xE000..=0xFDFF => {
+                self.save_memory((address - 0xE000) + 0xC000, value);
+            }
             0xFE00..=0xFFFF => self.memory.other_ram[address as usize] = value,
         }
     }
