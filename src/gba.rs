@@ -79,14 +79,17 @@ pub enum Opcode {
     SaveHLInc,
     LoadHLDec,
     SaveHLDec,
+    SaveHLSP(i8),
     AddHL(Register, Register),
     Inc(Register),
     IncPair(Register, Register),
     Dec(Register),
     DecPair(Register, Register),
     Jump(u16),
+    JumpCond(FlagBit, bool, u16),
     JumpRelative(i8),
     JumpRelativeCond(FlagBit, bool, i8),
+    JumpHL,
     DisableInterrupts,
     EnableInterrupts,
     Push(Register, Register),
@@ -170,11 +173,13 @@ impl ROM {
         &self.content[address..(address + length)]
     }
 
-    pub fn opcode(&self, address: usize) -> (Opcode, u16) {
-        let immediate8 = || { self.read_u8(address + 1) };
+    pub fn opcode(&self, address: u16, reader: impl Fn(u16) -> u8) -> (Opcode, u16) {
+        let immediate8 = || { reader(address + 1) };
         let relative8 = || { immediate8() as i8 };
-        let immediate16 = || { self.read_u16(address + 2) };
-        let opcode_value = self.content[address];
+        let immediate16 = || { 
+            ((reader(address + 2) as u16) << 8) + (reader(address + 1) as u16)
+        };
+        let opcode_value = reader(address);
         match opcode_value {
             0x00 => (Opcode::Noop, 1),
             0x02 => (Opcode::LoadRegisterIntoMemory(Register::A, Register::B, Register::C), 1),
@@ -187,6 +192,11 @@ impl ROM {
             0x10 => (Opcode::Stop, 1),
             0x27 => (Opcode::DAA, 1),
             0xC3 => (Opcode::Jump(immediate16()), 3),
+            0xE9 => (Opcode::JumpHL, 1),
+            0xC2 => (Opcode::JumpCond(FlagBit::Zero, false, immediate16()), 3),
+            0xD2 => (Opcode::JumpCond(FlagBit::Carry, false, immediate16()), 3),
+            0xCA => (Opcode::JumpCond(FlagBit::Zero, true, immediate16()), 3),
+            0xDA => (Opcode::JumpCond(FlagBit::Carry, true, immediate16()), 3),
             0x18 => (Opcode::JumpRelative(relative8()), 2),
             0x20 => (Opcode::JumpRelativeCond(FlagBit::Zero, false, relative8()), 2),
             0x28 => (Opcode::JumpRelativeCond(FlagBit::Zero, true, relative8()), 2),
@@ -195,6 +205,7 @@ impl ROM {
                 2,
             ),
             0x38 => (Opcode::JumpRelativeCond(FlagBit::Carry, true, relative8()), 2),
+            0xF8 => (Opcode::SaveHLSP(relative8()), 2),
             0x01 => (Opcode::Load16(Register::B, Register::C, immediate16()), 3),
             0x11 => (Opcode::Load16(Register::D, Register::E, immediate16()), 3),
             0x21 => (Opcode::Load16(Register::H, Register::L, immediate16()), 3),
@@ -303,7 +314,7 @@ impl ROM {
             0xDF => (Opcode::Restart(0x18), 1),
             0xEF => (Opcode::Restart(0x28), 1),
             0xFF => (Opcode::Restart(0x38), 1),
-            _ => (Opcode::UnimplementedOpcode(self.content[address]), 1),
+            _ => (Opcode::UnimplementedOpcode(opcode_value), 1),
         }
     }
 
@@ -359,20 +370,12 @@ impl ROM {
         }
     }
 
-    fn read_u8(&self, address: usize) -> u8 {
-        self.content[address]
-    }
-
-    fn read_u16(&self, address: usize) -> u16 {
-        ((self.content[address] as u16) << 8) + (self.content[address - 1] as u16)
-    }
-
     pub fn read_rom(&self, address: usize) -> u8 {
         self.content[address]
     }
 
-    pub fn read_rom_bank(&self, _bank: u8, _address: usize) -> u8 {
-        panic!("unimplemented");
+    pub fn read_rom_bank(&self, bank: u8, address: usize) -> u8 {
+        self.content[(0x4000 * (bank as usize)) + address]
     }
 }
 
@@ -447,11 +450,16 @@ impl Interpreter {
         }
     }
 
+    fn opcode(&self, address: u16) -> (Opcode, u16) {
+        let reader = |address| { self.read_memory(address) };
+        self.rom.opcode(address, reader)
+    }
+
     pub fn get_next_instructions(&self) -> BTreeMap<u16, Opcode> {
         let mut pc = self.program_state.program_counter;
         let mut result = BTreeMap::new();
         for _i in 0..3 {
-            let (opcode, opcode_size) = self.rom.opcode(pc as usize);
+            let (opcode, opcode_size) = self.opcode(pc);
             result.insert(pc, opcode);
             pc += opcode_size;
         }
@@ -460,16 +468,22 @@ impl Interpreter {
 
     pub fn run_single_instruction(&mut self) -> () {
         let current_pc = self.program_state.program_counter;
-        let (opcode, opcode_size) = self.rom.opcode(current_pc as usize);
+        let (opcode, opcode_size) = self.opcode(current_pc);
 
         // PC should be updated before we actually run the instruction.
         // This matters when you store return pointers on the stack.
-        self.program_state.program_counter = current_pc + opcode_size;
+        self.program_state.program_counter = current_pc.wrapping_add(opcode_size);
 
         let mut jump_location: Option<u16> = None;
         match opcode {
             Opcode::Noop => (),
             Opcode::Jump(address) => jump_location = Some(address),
+            Opcode::JumpCond(flag, set, address) => {
+                if self.get_flag(flag) == set {
+                    jump_location = Some(address);
+                }
+            }
+            Opcode::JumpHL => jump_location = Some(self.register_pair_value(Register::H, Register::L)),
             Opcode::JumpRelative(relative_address) => {
                 jump_location = Some(
                     ((self.program_state.program_counter as i32) + (relative_address as i32))
@@ -602,6 +616,15 @@ impl Interpreter {
             Opcode::LoadHLIntoSP => {
                 let address = self.register_pair_value(Register::H, Register::L);
                 self.program_state.stack_pointer = address;
+            }
+            Opcode::SaveHLSP(delta) => {
+                let value = delta.wrapping_abs() as u8;
+                let lower_sp = (self.program_state.stack_pointer & 0xff) as u8;
+                let save_value = if delta < 0 { self.program_state.stack_pointer.wrapping_sub(value as u16) } else { self.program_state.stack_pointer.wrapping_add(value as u16) };
+                let result = if delta < 0 { math::sub(lower_sp, value) } else { math::add(lower_sp, value) };
+                self.set_flag(FlagBit::Carry, result.carry.unwrap());
+                self.set_flag(FlagBit::HalfCarry, result.half_carry.unwrap());
+                self.save_register_pair(Register::H, Register::L, save_value);
             }
             Opcode::DAA => {
                 let result = math::daa(
@@ -845,7 +868,11 @@ impl Interpreter {
                                 self.memory.external_ram_enabled = false;
                             }
                         }
-                        _ => (),
+                        0x2000..=0x3FFF => {
+                            let bank = (0x1F & value) | (if (value & 0xf) == 0x0 { 0x1 } else { 0x0 });
+                            self.program_state.rom_bank = bank;
+                        }
+                        _ => panic!("MBC1 writing to rom at {:X} with value {:X}", address, value),
                     },
                     _ => panic!("({:?}) writing to rom at {:X} with value {:X}", self.rom.cartridge_type(), address, value),
                 }
@@ -865,7 +892,12 @@ impl Interpreter {
             0xE000..=0xFDFF => {
                 self.save_memory((address - 0xE000) + 0xC000, value);
             }
-            0xFE00..=0xFFFF => self.memory.other_ram[address as usize] = value,
+            0xFE00..=0xFFFF => {
+                if address == 0xFF01 {
+                    print!("{}", value as char);
+                }
+                self.memory.other_ram[address as usize] = value;
+            }
         }
     }
 
