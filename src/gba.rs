@@ -72,8 +72,10 @@ pub enum Opcode {
     LoadAddress(Register, u16),
     LoadAddressFromRegisters(Register, Register, Register),
     LoadRegisterIntoMemory(Register, Register, Register),
+    LoadRamCIntoA,
     LoadHLIntoSP,
     SaveRegister(Register, u16),
+    SaveAIntoRamC,
     SaveSP(u16),
     LoadHLInc,
     SaveHLInc,
@@ -125,6 +127,9 @@ pub enum Opcode {
     Bit(Register, u8),
     Reset(Register, u8),
     Set(Register, u8),
+    CPL,
+    CCF,
+    SCF,
     Restart(u16),
     DAA,
     UnimplementedOpcode(u8),
@@ -229,6 +234,8 @@ impl ROM {
                 Opcode::LoadAddress(Register::A, 0xff00 + (immediate8() as u16)),
                 2,
             ),
+            0xE2 => (Opcode::SaveAIntoRamC, 1),
+            0xF2 => (Opcode::LoadRamCIntoA, 1),
             0xC9 => (Opcode::Return, 1),
             0xC0 => (Opcode::ReturnCond(FlagBit::Zero, false), 1),
             0xD0 => (Opcode::ReturnCond(FlagBit::Carry, false), 1),
@@ -309,6 +316,9 @@ impl ROM {
             0x0F => (Opcode::RRC(Register::A), 1),
             0x17 => (Opcode::RL(Register::A), 1),
             0x1F => (Opcode::RR(Register::A), 1),
+            0x2F => (Opcode::CPL, 1),
+            0x3F => (Opcode::CCF, 1),
+            0x37 => (Opcode::SCF, 1),
             0xCB => (self.cb_opcode(immediate8()), 2),
             0xCF => (Opcode::Restart(0x08), 1),
             0xDF => (Opcode::Restart(0x18), 1),
@@ -514,6 +524,14 @@ impl Interpreter {
                 let value = self.get_register_value(register);
                 self.save_memory(address, value);
             }
+            Opcode::LoadRamCIntoA => {
+                let address = 0xff00 + (self.get_register_value(Register::C) as u16);
+                self.handle_save_register(Register::A, self.read_memory(address));
+            }
+            Opcode::SaveAIntoRamC => {
+                let address = 0xff00 + (self.get_register_value(Register::C) as u16);
+                self.save_memory(address, self.get_register_value(Register::A));
+            }
             Opcode::Call(address) => jump_location = self.do_call(address),
             Opcode::CallCond(flag, set, address) => {
                 if self.get_flag(flag) == set {
@@ -676,6 +694,22 @@ impl Interpreter {
                 let value = self.get_register_value(register);
                 let new_val = value & !(0x1 << pos);
                 self.handle_save_register(register, new_val);
+            }
+            Opcode::CPL => {
+                let value = !self.get_register_value(Register::A);
+                self.handle_save_register(Register::A, value);
+                self.set_flag(FlagBit::AddSub, true);
+                self.set_flag(FlagBit::HalfCarry, true);
+            }
+            Opcode::CCF => {
+                self.set_flag(FlagBit::Carry, !self.get_flag(FlagBit::Carry));
+                self.set_flag(FlagBit::AddSub, false);
+                self.set_flag(FlagBit::HalfCarry, false);
+            }
+            Opcode::SCF => {
+                self.set_flag(FlagBit::Carry, true);
+                self.set_flag(FlagBit::AddSub, false);
+                self.set_flag(FlagBit::HalfCarry, false);
             }
             _ => {
                 println!("unhandled opcode {:X?}", opcode);
