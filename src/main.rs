@@ -18,7 +18,7 @@ mod tests {
 
     #[test]
     fn test_cpu_instrs_rom() {
-        let rom = gba::ROM::from_path("test-roms/cpu_instrs.gb");
+        let rom = gba::ROM::from_path("test-roms/blargg/cpu_instrs/cpu_instrs.gb");
         assert_eq!(rom.title(), "CPU_INSTRS");
         assert_eq!(rom.has_nintendo_logo(), true);
         assert_eq!(rom.has_valid_header_checksum(), true);
@@ -51,12 +51,26 @@ mod tests {
 
     #[test]
     fn test_roms() {
-        let rom = gba::ROM::from_path("../gb-test-roms/cpu_instrs/individual/05-op rp.gb");
-        let mut interpreter = gba::Interpreter::with_rom(rom);
-        for _i in 0..5000000 {
-            interpreter.run_single_instruction();
-        }
-        assert_eq!(interpreter.output, "05-op rp\n\n\nPassed\n");
+        let test_cpu_instr = |name| {
+            let rom = gba::ROM::from_path(&format!("test-roms/blargg/cpu_instrs/individual/{}.gb", name));
+            let mut interpreter = gba::Interpreter::with_rom(rom);
+            for _i in 0..5000000 {
+                interpreter.run_single_instruction();
+            }
+            assert_eq!(interpreter.output, format!("{}\n\n\nPassed\n", name));
+        };
+        //test_cpu_instr("01-special");
+        //test_cpu_instr("02-interrupts");
+        //test_cpu_instr("03-op sl,hl");
+        test_cpu_instr("04-op r,imm");
+        test_cpu_instr("05-op rp");
+        test_cpu_instr("05-op rp");
+        test_cpu_instr("06-ld r,r");
+        //test_cpu_instr("07-jr,jp,call,ret,rst");
+        test_cpu_instr("08-misc instrs");
+        //test_cpu_instr("09-op r,r");
+        //test_cpu_instr("10-bit ops");
+        //test_cpu_instr("11-op a,(hl)");
     }
 }
 

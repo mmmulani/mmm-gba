@@ -191,29 +191,16 @@ pub fn rl(a: u8, carry: bool) -> Result {
 }
 
 pub fn sp_add(sp: u16, delta: i8) -> Result16 {
-    let abs_delta = delta.wrapping_abs() as u8;
-    if delta >= 0 {
-        let lower_value = add((sp & 0x00ff) as u8, abs_delta);
-        let higher_value = (((sp & 0xff00) >> 8) as u8).wrapping_add(if lower_value.carry.unwrap() { 0x1 } else { 0x0 });
-        let value = ((higher_value as u16) << 8) + (lower_value.value as u16);
-        Result16 {
-            value,
-            zero: Some(false),
-            add_sub: Some(false),
-            half_carry: lower_value.half_carry,
-            carry: lower_value.carry,
-        }
-    } else {
-        let lower_value = sub((sp & 0x00ff) as u8, abs_delta);
-        let higher_value = (((sp & 0xff00) >> 8) as u8).wrapping_sub(if lower_value.carry.unwrap() { 0x1 } else { 0x0 });
-        let value = ((higher_value as u16) << 8) + (lower_value.value as u16);
-        Result16 {
-            value,
-            zero: Some(false),
-            add_sub: Some(false),
-            half_carry: lower_value.half_carry,
-            carry: lower_value.carry,
-        }
+    let b = (delta as i16) as u16;
+    let half_carry = (0xf & sp) + (0xf & b) >= 0x10;
+    let carry = (0xff & sp) + (0xff & b) >= 0x100;
+    let value = sp.wrapping_add(b);
+    Result16 {
+        value,
+        zero: Some(false),
+        add_sub: Some(false),
+        half_carry: Some(half_carry),
+        carry: Some(carry),
     }
 }
 
@@ -787,8 +774,8 @@ mod tests {
                 value: 0xfffd,
                 zero: Some(false),
                 add_sub: Some(false),
-                half_carry: Some(false),
-                carry: Some(false),
+                half_carry: Some(true),
+                carry: Some(true),
             }
         );
         assert_eq!(
@@ -797,8 +784,18 @@ mod tests {
                 value: 0xfefe,
                 zero: Some(false),
                 add_sub: Some(false),
-                half_carry: Some(true),
-                carry: Some(true),
+                half_carry: Some(false),
+                carry: Some(false),
+            }
+        );
+        assert_eq!(
+            sp_add(0xff00, -127),
+            Result16 {
+                value: 0xfe81,
+                zero: Some(false),
+                add_sub: Some(false),
+                half_carry: Some(false),
+                carry: Some(false),
             }
         );
         assert_eq!(
@@ -807,8 +804,8 @@ mod tests {
                 value: 0xffff,
                 zero: Some(false),
                 add_sub: Some(false),
-                half_carry: Some(true),
-                carry: Some(true),
+                half_carry: Some(false),
+                carry: Some(false),
             }
         );
     }
