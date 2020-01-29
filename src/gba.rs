@@ -107,7 +107,7 @@ pub enum Opcode {
     Cp(Register),
     Add(Register),
     AddCarry(Register),
-    AddSP(u8),
+    AddSP(i8),
     Sub(Register),
     SubCarry(Register),
     AndValue(u8),
@@ -196,7 +196,7 @@ impl ROM {
             0x19 => (Opcode::AddHL(Register::D, Register::E), 1),
             0x29 => (Opcode::AddHL(Register::H, Register::L), 1),
             0x39 => (Opcode::AddHL(Register::SPHi, Register::SPLo), 1),
-            0xE8 => (Opcode::AddSP(immediate8()), 2),
+            0xE8 => (Opcode::AddSP(relative8()), 2),
             0x10 => (Opcode::Stop, 1),
             0x27 => (Opcode::DAA, 1),
             0xC3 => (Opcode::Jump(immediate16()), 3),
@@ -424,6 +424,7 @@ pub struct Interpreter {
     pub register_state: RegisterState,
     pub program_state: ProgramState,
     memory: Memory,
+    pub output: String,
 }
 
 impl Interpreter {
@@ -458,6 +459,7 @@ impl Interpreter {
                 external_ram: vec![0; ram_size],
                 external_ram_enabled: false,
             },
+            output: String::from(""),
         }
     }
 
@@ -578,6 +580,16 @@ impl Interpreter {
                 self.set_flag(FlagBit::Carry, result.carry.unwrap());
                 self.set_flag(FlagBit::HalfCarry, result.half_carry.unwrap());
             }
+            Opcode::AddSP(value) => {
+                let result = math::sp_add(self.program_state.stack_pointer, value);
+                self.program_state.stack_pointer = result.value;
+                self.apply_math_result16_flags(result);
+            }
+            Opcode::SaveHLSP(value) => {
+                let result = math::sp_add(self.program_state.stack_pointer, value);
+                self.apply_math_result16_flags(result);
+                self.save_register_pair(Register::H, Register::L, result.value);
+            }
             Opcode::IncPair(hi_register, lo_register) => {
                 let value = self
                     .register_pair_value(hi_register, lo_register)
@@ -635,15 +647,6 @@ impl Interpreter {
             Opcode::LoadHLIntoSP => {
                 let address = self.register_pair_value(Register::H, Register::L);
                 self.program_state.stack_pointer = address;
-            }
-            Opcode::SaveHLSP(delta) => {
-                let value = delta.wrapping_abs() as u8;
-                let lower_sp = (self.program_state.stack_pointer & 0xff) as u8;
-                let save_value = if delta < 0 { self.program_state.stack_pointer.wrapping_sub(value as u16) } else { self.program_state.stack_pointer.wrapping_add(value as u16) };
-                let result = if delta < 0 { math::sub(lower_sp, value) } else { math::add(lower_sp, value) };
-                self.set_flag(FlagBit::Carry, result.carry.unwrap());
-                self.set_flag(FlagBit::HalfCarry, result.half_carry.unwrap());
-                self.save_register_pair(Register::H, Register::L, save_value);
             }
             Opcode::DAA => {
                 let result = math::daa(
@@ -761,6 +764,21 @@ impl Interpreter {
     }
 
     fn apply_math_result_flags(&mut self, result: math::Result) {
+        if result.zero.is_some() {
+            self.set_flag(FlagBit::Zero, result.zero.unwrap());
+        }
+        if result.add_sub.is_some() {
+            self.set_flag(FlagBit::AddSub, result.add_sub.unwrap());
+        }
+        if result.half_carry.is_some() {
+            self.set_flag(FlagBit::HalfCarry, result.half_carry.unwrap());
+        }
+        if result.carry.is_some() {
+            self.set_flag(FlagBit::Carry, result.carry.unwrap());
+        }
+    }
+
+    fn apply_math_result16_flags(&mut self, result: math::Result16) {
         if result.zero.is_some() {
             self.set_flag(FlagBit::Zero, result.zero.unwrap());
         }
@@ -930,6 +948,7 @@ impl Interpreter {
             }
             0xFE00..=0xFFFF => {
                 if address == 0xFF01 {
+                    self.output.push(value as char);
                     print!("{}", value as char);
                 }
                 self.memory.other_ram[address as usize] = value;

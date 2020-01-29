@@ -48,6 +48,16 @@ mod tests {
         );
         assert_eq!(opcode(&[0x18, 0xFF]), (Opcode::JumpRelative(-1), 2));
     }
+
+    #[test]
+    fn test_roms() {
+        let rom = gba::ROM::from_path("../gb-test-roms/cpu_instrs/individual/05-op rp.gb");
+        let mut interpreter = gba::Interpreter::with_rom(rom);
+        for _i in 0..5000000 {
+            interpreter.run_single_instruction();
+        }
+        assert_eq!(interpreter.output, "05-op rp\n\n\nPassed\n");
+    }
 }
 
 fn main() -> Result<(), std::io::Error> {
