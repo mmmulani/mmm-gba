@@ -122,6 +122,10 @@ pub enum Opcode {
     RRC(Register),
     RL(Register),
     RR(Register),
+    RLCA,
+    RRCA,
+    RLA,
+    RRA,
     SLA(Register),
     SRA(Register),
     Swap(Register),
@@ -316,10 +320,10 @@ impl ROM {
             0xD6 => (Opcode::SubValue(immediate8()), 2),
             0xDE => (Opcode::SubCarryValue(immediate8()), 2),
             0xF9 => (Opcode::LoadHLIntoSP, 1),
-            0x07 => (Opcode::RLC(Register::A), 1),
-            0x0F => (Opcode::RRC(Register::A), 1),
-            0x17 => (Opcode::RL(Register::A), 1),
-            0x1F => (Opcode::RR(Register::A), 1),
+            0x07 => (Opcode::RLCA, 1),
+            0x0F => (Opcode::RRCA, 1),
+            0x17 => (Opcode::RLA, 1),
+            0x1F => (Opcode::RRA, 1),
             0x2F => (Opcode::CPL, 1),
             0x3F => (Opcode::CCF, 1),
             0x37 => (Opcode::SCF, 1),
@@ -678,6 +682,22 @@ impl Interpreter {
             Opcode::RRC(register) => self.do_bit_op(register, math::rrc),
             Opcode::RR(register) => self.do_bit_op_carry(register, math::rr),
             Opcode::RL(register) => self.do_bit_op_carry(register, math::rl),
+            Opcode::RLCA => {
+                self.do_bit_op(Register::A, math::rlc);
+                self.set_flag(FlagBit::Zero, false);
+            }
+            Opcode::RRCA => {
+                self.do_bit_op(Register::A, math::rrc);
+                self.set_flag(FlagBit::Zero, false);
+            }
+            Opcode::RRA => {
+                self.do_bit_op_carry(Register::A, math::rr);
+                self.set_flag(FlagBit::Zero, false);
+            }
+            Opcode::RLA => {
+                self.do_bit_op_carry(Register::A, math::rl);
+                self.set_flag(FlagBit::Zero, false);
+            }
             Opcode::SLA(register) => self.do_bit_op(register, math::sla),
             Opcode::SRA(register) => self.do_bit_op(register, math::sra),
             Opcode::SRL(register) => self.do_bit_op(register, math::srl),
