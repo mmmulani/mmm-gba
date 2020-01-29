@@ -552,6 +552,7 @@ impl Interpreter {
                     jump_location = self.do_return();
                 }
             }
+            Opcode::ReturnInterrupt => jump_location = self.do_return(),
             Opcode::LoadReg(to_register, from_register) => {
                 self.handle_save_register(to_register, self.get_register_value(from_register));
             }

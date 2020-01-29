@@ -73,7 +73,7 @@ mod tests {
         test_cpu_instr("05-op rp");
         test_cpu_instr("05-op rp");
         test_cpu_instr("06-ld r,r");
-        //test_cpu_instr("07-jr,jp,call,ret,rst");
+        test_cpu_instr("07-jr,jp,call,ret,rst");
         test_cpu_instr("08-misc instrs");
         test_cpu_instr("09-op r,r");
         test_cpu_instr("10-bit ops");
