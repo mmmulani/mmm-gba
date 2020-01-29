@@ -54,10 +54,17 @@ mod tests {
         let test_cpu_instr = |name| {
             let rom = gba::ROM::from_path(&format!("test-roms/blargg/cpu_instrs/individual/{}.gb", name));
             let mut interpreter = gba::Interpreter::with_rom(rom);
-            for _i in 0..5000000 {
-                interpreter.run_single_instruction();
+            let mut passing = false;
+            for _i in 0..10000 {
+                for _j in 0..1000 {
+                    interpreter.run_single_instruction();
+                }
+                if interpreter.output.contains("Passed") || interpreter.output.contains("Fail") {
+                    passing = interpreter.output.contains("Passed");
+                    break;
+                }
             }
-            assert_eq!(interpreter.output, format!("{}\n\n\nPassed\n", name));
+            assert!(passing);
         };
         //test_cpu_instr("01-special");
         //test_cpu_instr("02-interrupts");
@@ -69,7 +76,7 @@ mod tests {
         //test_cpu_instr("07-jr,jp,call,ret,rst");
         test_cpu_instr("08-misc instrs");
         test_cpu_instr("09-op r,r");
-        //test_cpu_instr("10-bit ops");
+        test_cpu_instr("10-bit ops");
         //test_cpu_instr("11-op a,(hl)");
     }
 }
