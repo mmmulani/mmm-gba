@@ -69,7 +69,7 @@ mod tests {
             }
             assert!(passing);
         };
-        //test_cpu_instr("01-special");
+        test_cpu_instr("01-special");
         //test_cpu_instr("02-interrupts");
         test_cpu_instr("03-op sp,hl");
         test_cpu_instr("04-op r,imm");
@@ -80,7 +80,7 @@ mod tests {
         test_cpu_instr("08-misc instrs");
         test_cpu_instr("09-op r,r");
         test_cpu_instr("10-bit ops");
-        //test_cpu_instr("11-op a,(hl)");
+        test_cpu_instr("11-op a,(hl)");
     }
 }
 

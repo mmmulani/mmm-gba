@@ -248,7 +248,7 @@ pub fn daa(a: u8, carry: bool, half: bool, subtraction: bool) -> Result {
             zero: Some(value == 0),
             add_sub: None,
             half_carry: Some(false),
-            carry: Some(did_overflow),
+            carry: Some(left_add >= 0x60),
         }
     } else {
         let adder = match (carry, half) {
@@ -263,7 +263,7 @@ pub fn daa(a: u8, carry: bool, half: bool, subtraction: bool) -> Result {
             zero: Some(value == 0),
             add_sub: None,
             half_carry: Some(false),
-            carry: Some(did_overflow),
+            carry: Some(carry),
         }
     }
 }
@@ -732,6 +732,16 @@ mod tests {
                 add_sub: None,
                 half_carry: Some(false),
                 carry: Some(false),
+            }
+        );
+        assert_eq!(
+            daa(0x20, true, false, false),
+            Result {
+                value: 0x80,
+                zero: Some(false),
+                add_sub: None,
+                half_carry: Some(false),
+                carry: Some(true),
             }
         );
     }
