@@ -185,16 +185,20 @@ impl ROM {
     }
 
     pub fn opcode(&self, address: u16, reader: impl Fn(u16) -> u8) -> (Opcode, u16) {
-        let immediate8 = || { reader(address + 1) };
-        let relative8 = || { immediate8() as i8 };
-        let immediate16 = || { 
-            ((reader(address + 2) as u16) << 8) + (reader(address + 1) as u16)
-        };
+        let immediate8 = || reader(address + 1);
+        let relative8 = || immediate8() as i8;
+        let immediate16 = || ((reader(address + 2) as u16) << 8) + (reader(address + 1) as u16);
         let opcode_value = reader(address);
         match opcode_value {
             0x00 => (Opcode::Noop, 1),
-            0x02 => (Opcode::LoadRegisterIntoMemory(Register::A, Register::B, Register::C), 1),
-            0x12 => (Opcode::LoadRegisterIntoMemory(Register::A, Register::D, Register::E), 1),
+            0x02 => (
+                Opcode::LoadRegisterIntoMemory(Register::A, Register::B, Register::C),
+                1,
+            ),
+            0x12 => (
+                Opcode::LoadRegisterIntoMemory(Register::A, Register::D, Register::E),
+                1,
+            ),
             0x08 => (Opcode::SaveSP(immediate16()), 3),
             0x09 => (Opcode::AddHL(Register::B, Register::C), 1),
             0x19 => (Opcode::AddHL(Register::D, Register::E), 1),
@@ -210,13 +214,22 @@ impl ROM {
             0xCA => (Opcode::JumpCond(FlagBit::Zero, true, immediate16()), 3),
             0xDA => (Opcode::JumpCond(FlagBit::Carry, true, immediate16()), 3),
             0x18 => (Opcode::JumpRelative(relative8()), 2),
-            0x20 => (Opcode::JumpRelativeCond(FlagBit::Zero, false, relative8()), 2),
-            0x28 => (Opcode::JumpRelativeCond(FlagBit::Zero, true, relative8()), 2),
+            0x20 => (
+                Opcode::JumpRelativeCond(FlagBit::Zero, false, relative8()),
+                2,
+            ),
+            0x28 => (
+                Opcode::JumpRelativeCond(FlagBit::Zero, true, relative8()),
+                2,
+            ),
             0x30 => (
                 Opcode::JumpRelativeCond(FlagBit::Carry, false, relative8()),
                 2,
             ),
-            0x38 => (Opcode::JumpRelativeCond(FlagBit::Carry, true, relative8()), 2),
+            0x38 => (
+                Opcode::JumpRelativeCond(FlagBit::Carry, true, relative8()),
+                2,
+            ),
             0xF8 => (Opcode::SaveHLSP(relative8()), 2),
             0x01 => (Opcode::Load16(Register::B, Register::C, immediate16()), 3),
             0x11 => (Opcode::Load16(Register::D, Register::E, immediate16()), 3),
@@ -328,8 +341,12 @@ impl ROM {
             0x3F => (Opcode::CCF, 1),
             0x37 => (Opcode::SCF, 1),
             0xCB => (self.cb_opcode(immediate8()), 2),
-            0xC7 | 0xCF | 0xD7 | 0xDF | 0xE7 | 0xEF | 0xF7 | 0xFF => (Opcode::Restart((opcode_value & 0x38) as u16), 1),
-            0xD3 | 0xDB | 0xDD | 0xE3 | 0xE4 | 0xEB | 0xEC | 0xED | 0xF4 | 0xFC | 0xFD => (Opcode::UnimplementedOpcode(opcode_value), 1),
+            0xC7 | 0xCF | 0xD7 | 0xDF | 0xE7 | 0xEF | 0xF7 | 0xFF => {
+                (Opcode::Restart((opcode_value & 0x38) as u16), 1)
+            }
+            0xD3 | 0xDB | 0xDD | 0xE3 | 0xE4 | 0xEB | 0xEC | 0xED | 0xF4 | 0xFC | 0xFD => {
+                (Opcode::UnimplementedOpcode(opcode_value), 1)
+            }
         }
     }
 
@@ -414,6 +431,50 @@ pub struct ProgramState {
     rom_bank: u8,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct Interrupts {
+    master_enabled: bool,
+    request_flag: u8,
+    enable_flag: u8,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum InterruptBit {
+    VBlank,
+    LCDStatus,
+    Timer,
+    Serial,
+    Joypad,
+}
+
+static INTERRUPTS: [InterruptBit; 5] = [
+    InterruptBit::VBlank,
+    InterruptBit::LCDStatus,
+    InterruptBit::Timer,
+    InterruptBit::Serial,
+    InterruptBit::Joypad,
+];
+
+fn interrupt_picker(bit: InterruptBit) -> u8 {
+    match bit {
+        InterruptBit::VBlank => 1 << 0,
+        InterruptBit::LCDStatus => 1 << 1,
+        InterruptBit::Timer => 1 << 2,
+        InterruptBit::Serial => 1 << 3,
+        InterruptBit::Joypad => 1 << 4,
+    }
+}
+
+fn interrupt_address(bit: InterruptBit) -> u16 {
+    match bit {
+        InterruptBit::VBlank => 0x40,
+        InterruptBit::LCDStatus => 0x48,
+        InterruptBit::Timer => 0x50,
+        InterruptBit::Serial => 0x58,
+        InterruptBit::Joypad => 0x60,
+    }
+}
+
 struct Memory {
     video_ram: Vec<u8>,
     work_ram_0: Vec<u8>,
@@ -429,6 +490,7 @@ pub struct Interpreter {
     pub program_state: ProgramState,
     memory: Memory,
     pub output: String,
+    interrupts: Interrupts,
 }
 
 impl Interpreter {
@@ -464,11 +526,16 @@ impl Interpreter {
                 external_ram_enabled: false,
             },
             output: String::from(""),
+            interrupts: Interrupts {
+                master_enabled: false,
+                request_flag: 0xe0,
+                enable_flag: 0x00,
+            },
         }
     }
 
     fn opcode(&self, address: u16) -> (Opcode, u16) {
-        let reader = |address| { self.read_memory(address) };
+        let reader = |address| self.read_memory(address);
         self.rom.opcode(address, reader)
     }
 
@@ -487,6 +554,22 @@ impl Interpreter {
         let current_pc = self.program_state.program_counter;
         let (opcode, opcode_size) = self.opcode(current_pc);
 
+        if self.interrupts.master_enabled
+            && ((0x1f & self.interrupts.enable_flag & self.interrupts.request_flag) != 0)
+        {
+            self.interrupts.master_enabled = false;
+            for bit in INTERRUPTS.into_iter() {
+                let picker = interrupt_picker(*bit);
+                if self.interrupts.enable_flag & self.interrupts.request_flag & picker != 0 {
+                    let address = interrupt_address(*bit);
+                    self.interrupts.request_flag = !picker & self.interrupts.request_flag;
+                    self.program_state.program_counter = self.do_call(address).unwrap();
+                    return;
+                }
+            }
+            panic!("could not find value to interrupt to");
+        }
+
         // PC should be updated before we actually run the instruction.
         // This matters when you store return pointers on the stack.
         self.program_state.program_counter = current_pc.wrapping_add(opcode_size);
@@ -500,7 +583,9 @@ impl Interpreter {
                     jump_location = Some(address);
                 }
             }
-            Opcode::JumpHL => jump_location = Some(self.register_pair_value(Register::H, Register::L)),
+            Opcode::JumpHL => {
+                jump_location = Some(self.register_pair_value(Register::H, Register::L))
+            }
             Opcode::JumpRelative(relative_address) => {
                 jump_location = Some(
                     ((self.program_state.program_counter as i32) + (relative_address as i32))
@@ -515,8 +600,8 @@ impl Interpreter {
                     );
                 }
             }
-            Opcode::DisableInterrupts => (),
-            Opcode::EnableInterrupts => (),
+            Opcode::DisableInterrupts => self.interrupts.master_enabled = false,
+            Opcode::EnableInterrupts => self.interrupts.master_enabled = true,
             Opcode::Load8(register, value) => {
                 self.handle_save_register(register, value);
             }
@@ -552,7 +637,10 @@ impl Interpreter {
                     jump_location = self.do_return();
                 }
             }
-            Opcode::ReturnInterrupt => jump_location = self.do_return(),
+            Opcode::ReturnInterrupt => {
+                jump_location = self.do_return();
+                self.interrupts.master_enabled = true;
+            }
             Opcode::LoadReg(to_register, from_register) => {
                 self.handle_save_register(to_register, self.get_register_value(from_register));
             }
@@ -825,8 +913,8 @@ impl Interpreter {
 
     fn do_return(&mut self) -> Option<u16> {
         let old_sp = self.program_state.stack_pointer;
-        let new_pc: u16 = (self.read_memory(old_sp) as u16)
-            + ((self.read_memory(old_sp + 1) as u16) << 8);
+        let new_pc: u16 =
+            (self.read_memory(old_sp) as u16) + ((self.read_memory(old_sp + 1) as u16) << 8);
         self.program_state.stack_pointer = self.program_state.stack_pointer + 2;
         Some(new_pc)
     }
@@ -876,7 +964,11 @@ impl Interpreter {
     }
 
     fn handle_save_register(&mut self, register: Register, value: u8) -> () {
-        let value = if register == Register::F { value & 0xf0 } else { value };
+        let value = if register == Register::F {
+            value & 0xf0
+        } else {
+            value
+        };
         if register == Register::SpecialLoadHL {
             self.save_memory(self.register_pair_value(Register::H, Register::L), value);
         } else {
@@ -926,6 +1018,8 @@ impl Interpreter {
             0xC000..=0xCFFF => self.memory.work_ram_0[(address - 0xC000) as usize],
             0xD000..=0xDFFF => self.memory.work_ram_1[(address - 0xD000) as usize],
             0xE000..=0xFDFF => panic!("unimplemented echo memory"),
+            0xFF0F => self.interrupts.request_flag,
+            0xFFFF => self.interrupts.enable_flag,
             0xFE00..=0xFFFF => self.memory.other_ram[address as usize],
         }
     }
@@ -933,25 +1027,31 @@ impl Interpreter {
     fn save_memory(&mut self, address: u16, value: u8) -> () {
         match address {
             0xFF70 => panic!("writing to ram bank switcher"),
-            0x0000..=0x7FFF => {
-                match self.rom.cartridge_type() {
-                    MemoryBankType::MBC1 => match address {
-                        0x0000..=0x1FFF => {
-                            if (value & 0x0A) != 0 {
-                                self.memory.external_ram_enabled = true;
-                            } else {
-                                self.memory.external_ram_enabled = false;
-                            }
+            0x0000..=0x7FFF => match self.rom.cartridge_type() {
+                MemoryBankType::MBC1 => match address {
+                    0x0000..=0x1FFF => {
+                        if (value & 0x0A) != 0 {
+                            self.memory.external_ram_enabled = true;
+                        } else {
+                            self.memory.external_ram_enabled = false;
                         }
-                        0x2000..=0x3FFF => {
-                            let bank = (0x1F & value) | (if (value & 0xf) == 0x0 { 0x1 } else { 0x0 });
-                            self.program_state.rom_bank = bank;
-                        }
-                        _ => panic!("MBC1 writing to rom at {:X} with value {:X}", address, value),
-                    },
-                    _ => panic!("({:?}) writing to rom at {:X} with value {:X}", self.rom.cartridge_type(), address, value),
-                }
-            }
+                    }
+                    0x2000..=0x3FFF => {
+                        let bank = (0x1F & value) | (if (value & 0xf) == 0x0 { 0x1 } else { 0x0 });
+                        self.program_state.rom_bank = bank;
+                    }
+                    _ => panic!(
+                        "MBC1 writing to rom at {:X} with value {:X}",
+                        address, value
+                    ),
+                },
+                _ => panic!(
+                    "({:?}) writing to rom at {:X} with value {:X}",
+                    self.rom.cartridge_type(),
+                    address,
+                    value
+                ),
+            },
             0x8000..=0x9FFF => self.memory.video_ram[(address - 0x8000) as usize] = value,
             0xA000..=0xBFFF => {
                 if self.memory.external_ram_enabled
@@ -967,6 +1067,8 @@ impl Interpreter {
             0xE000..=0xFDFF => {
                 self.save_memory((address - 0xE000) + 0xC000, value);
             }
+            0xFF0F => self.interrupts.request_flag = value,
+            0xFFFF => self.interrupts.enable_flag = value,
             0xFE00..=0xFFFF => {
                 if address == 0xFF01 {
                     self.output.push(value as char);

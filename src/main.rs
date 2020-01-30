@@ -32,7 +32,7 @@ mod tests {
             bytes.resize(3, 0);
         }
         let rom = gba::ROM::from_bytes(bytes.to_vec());
-        rom.opcode(0, |address| { bytes[address as usize] })
+        rom.opcode(0, |address| bytes[address as usize])
     }
 
     #[test]
@@ -52,7 +52,10 @@ mod tests {
     #[test]
     fn test_roms() {
         let test_cpu_instr = |name| {
-            let rom = gba::ROM::from_path(&format!("test-roms/blargg/cpu_instrs/individual/{}.gb", name));
+            let rom = gba::ROM::from_path(&format!(
+                "test-roms/blargg/cpu_instrs/individual/{}.gb",
+                name
+            ));
             let mut interpreter = gba::Interpreter::with_rom(rom);
             let mut passing = false;
             for _i in 0..10000 {
