@@ -558,7 +558,7 @@ impl Interpreter {
             && ((0x1f & self.interrupts.enable_flag & self.interrupts.request_flag) != 0)
         {
             self.interrupts.master_enabled = false;
-            for bit in INTERRUPTS.into_iter() {
+            for bit in INTERRUPTS.iter() {
                 let picker = interrupt_picker(*bit);
                 if self.interrupts.enable_flag & self.interrupts.request_flag & picker != 0 {
                     let address = interrupt_address(*bit);

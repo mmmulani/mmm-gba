@@ -242,7 +242,7 @@ pub fn daa(a: u8, carry: bool, half: bool, subtraction: bool) -> Result {
         } else {
             0x00
         };
-        let (value, did_overflow) = a.overflowing_add(left_add + right_add);
+        let (value, _did_overflow) = a.overflowing_add(left_add + right_add);
         Result {
             value,
             zero: Some(value == 0),
@@ -257,7 +257,7 @@ pub fn daa(a: u8, carry: bool, half: bool, subtraction: bool) -> Result {
             (true, false) => 0xA0,
             (true, true) => 0x9A,
         };
-        let (value, did_overflow) = a.overflowing_add(adder);
+        let (value, _did_overflow) = a.overflowing_add(adder);
         Result {
             value,
             zero: Some(value == 0),
