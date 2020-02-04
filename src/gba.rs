@@ -166,6 +166,7 @@ impl ROM {
         }
     }
 
+    #[cfg(test)]
     pub fn from_bytes(bytes: Vec<u8>) -> ROM {
         ROM { content: bytes }
     }
@@ -178,10 +179,6 @@ impl ROM {
             .collect();
         let str = String::from_utf8(title).unwrap();
         str
-    }
-
-    pub fn bytes(&self, address: usize, length: usize) -> &[u8] {
-        &self.content[address..(address + length)]
     }
 
     pub fn opcode(&self, address: u16, reader: impl Fn(u16) -> u8) -> (Opcode, u16, u16) {
@@ -871,6 +868,10 @@ impl Interpreter {
             panic!("Cycle cost not set correctly");
         }
         self.program_state.cycle_count += cycle_cost as u64;
+    }
+
+    fn handle_timer(&mut self) -> () {
+        // CPU operates at 4.194304Mhz
     }
 
     fn do_math_reg(&mut self, register: Register, f: fn(u8, u8) -> math::Result) -> () {

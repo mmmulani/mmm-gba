@@ -88,7 +88,7 @@ fn main() -> Result<(), std::io::Error> {
     let args: Vec<String> = env::args().collect();
     let filename = &args[1];
     let rom = gba::ROM::from_path(filename);
-    let title = rom.title();
+    let _title = rom.title();
     let interpreter = gba::Interpreter::with_rom(rom);
     let ref_inter = Rc::new(RefCell::new(interpreter));
 
@@ -168,7 +168,7 @@ fn main() -> Result<(), std::io::Error> {
         .child(input);
 
     let mut sidebar = LinearLayout::vertical();
-    let mut registers = TextView::new("register output").with_name("registers");
+    let registers = TextView::new("register output").with_name("registers");
 
     sidebar.add_child(registers);
 
