@@ -459,6 +459,7 @@ pub struct Interrupts {
     master_enabled: bool,
     request_flag: u8,
     enable_flag: u8,
+    halted: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -553,6 +554,7 @@ impl Interpreter {
                 master_enabled: false,
                 request_flag: 0xe0,
                 enable_flag: 0x00,
+                halted: false,
             },
         }
     }
@@ -577,20 +579,31 @@ impl Interpreter {
         let current_pc = self.program_state.program_counter;
         let (opcode, opcode_size, mut cycle_cost) = self.opcode(current_pc);
 
-        if self.interrupts.master_enabled
+        let can_interrupt = self.interrupts.master_enabled || self.interrupts.halted;
+        if can_interrupt
             && ((0x1f & self.interrupts.enable_flag & self.interrupts.request_flag) != 0)
         {
             self.interrupts.master_enabled = false;
+            self.interrupts.halted = false;
             for bit in INTERRUPTS.iter() {
                 let picker = interrupt_picker(*bit);
                 if self.interrupts.enable_flag & self.interrupts.request_flag & picker != 0 {
                     let address = interrupt_address(*bit);
                     self.interrupts.request_flag = !picker & self.interrupts.request_flag;
-                    self.program_state.program_counter = self.do_call(address).unwrap();
+                    if self.interrupts.master_enabled {
+                        self.program_state.program_counter = self.do_call(address).unwrap();
+                    }
                     return;
                 }
             }
             panic!("could not find value to interrupt to");
+        }
+
+        if self.interrupts.halted {
+            let old_cycle_count = self.program_state.cycle_count;
+            self.program_state.cycle_count += cycle_cost as u64;
+            self.handle_timer(old_cycle_count, self.program_state.cycle_count);
+            return;
         }
 
         // PC should be updated before we actually run the instruction.
@@ -854,6 +867,9 @@ impl Interpreter {
                 self.set_flag(FlagBit::Carry, true);
                 self.set_flag(FlagBit::AddSub, false);
                 self.set_flag(FlagBit::HalfCarry, false);
+            }
+            Opcode::Halt => {
+                self.interrupts.halted = true;
             }
             _ => {
                 println!("unhandled opcode {:X?}", opcode);
