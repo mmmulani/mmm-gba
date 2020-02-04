@@ -184,168 +184,194 @@ impl ROM {
         &self.content[address..(address + length)]
     }
 
-    pub fn opcode(&self, address: u16, reader: impl Fn(u16) -> u8) -> (Opcode, u16) {
+    pub fn opcode(&self, address: u16, reader: impl Fn(u16) -> u8) -> (Opcode, u16, u16) {
         let immediate8 = || reader(address + 1);
         let relative8 = || immediate8() as i8;
         let immediate16 = || ((reader(address + 2) as u16) << 8) + (reader(address + 1) as u16);
         let opcode_value = reader(address);
         match opcode_value {
-            0x00 => (Opcode::Noop, 1),
+            0x00 => (Opcode::Noop, 1, 4),
             0x02 => (
                 Opcode::LoadRegisterIntoMemory(Register::A, Register::B, Register::C),
                 1,
+                8,
             ),
             0x12 => (
                 Opcode::LoadRegisterIntoMemory(Register::A, Register::D, Register::E),
                 1,
+                8,
             ),
-            0x08 => (Opcode::SaveSP(immediate16()), 3),
-            0x09 => (Opcode::AddHL(Register::B, Register::C), 1),
-            0x19 => (Opcode::AddHL(Register::D, Register::E), 1),
-            0x29 => (Opcode::AddHL(Register::H, Register::L), 1),
-            0x39 => (Opcode::AddHL(Register::SPHi, Register::SPLo), 1),
-            0xE8 => (Opcode::AddSP(relative8()), 2),
-            0x10 => (Opcode::Stop, 1),
-            0x27 => (Opcode::DAA, 1),
-            0xC3 => (Opcode::Jump(immediate16()), 3),
-            0xE9 => (Opcode::JumpHL, 1),
-            0xC2 => (Opcode::JumpCond(FlagBit::Zero, false, immediate16()), 3),
-            0xD2 => (Opcode::JumpCond(FlagBit::Carry, false, immediate16()), 3),
-            0xCA => (Opcode::JumpCond(FlagBit::Zero, true, immediate16()), 3),
-            0xDA => (Opcode::JumpCond(FlagBit::Carry, true, immediate16()), 3),
-            0x18 => (Opcode::JumpRelative(relative8()), 2),
+            0x08 => (Opcode::SaveSP(immediate16()), 3, 20),
+            0x09 => (Opcode::AddHL(Register::B, Register::C), 1, 8),
+            0x19 => (Opcode::AddHL(Register::D, Register::E), 1, 8),
+            0x29 => (Opcode::AddHL(Register::H, Register::L), 1, 8),
+            0x39 => (Opcode::AddHL(Register::SPHi, Register::SPLo), 1, 8),
+            0xE8 => (Opcode::AddSP(relative8()), 2, 16),
+            0x10 => (Opcode::Stop, 1, 4),
+            0x27 => (Opcode::DAA, 1, 4),
+            0xC3 => (Opcode::Jump(immediate16()), 3, 16),
+            0xE9 => (Opcode::JumpHL, 1, 4),
+            0xC2 => (Opcode::JumpCond(FlagBit::Zero, false, immediate16()), 3, 0),
+            0xD2 => (Opcode::JumpCond(FlagBit::Carry, false, immediate16()), 3, 0),
+            0xCA => (Opcode::JumpCond(FlagBit::Zero, true, immediate16()), 3, 0),
+            0xDA => (Opcode::JumpCond(FlagBit::Carry, true, immediate16()), 3, 0),
+            0x18 => (Opcode::JumpRelative(relative8()), 2, 12),
             0x20 => (
                 Opcode::JumpRelativeCond(FlagBit::Zero, false, relative8()),
                 2,
+                0,
             ),
             0x28 => (
                 Opcode::JumpRelativeCond(FlagBit::Zero, true, relative8()),
                 2,
+                0,
             ),
             0x30 => (
                 Opcode::JumpRelativeCond(FlagBit::Carry, false, relative8()),
                 2,
+                0,
             ),
             0x38 => (
                 Opcode::JumpRelativeCond(FlagBit::Carry, true, relative8()),
                 2,
+                0,
             ),
-            0xF8 => (Opcode::SaveHLSP(relative8()), 2),
-            0x01 => (Opcode::Load16(Register::B, Register::C, immediate16()), 3),
-            0x11 => (Opcode::Load16(Register::D, Register::E, immediate16()), 3),
-            0x21 => (Opcode::Load16(Register::H, Register::L, immediate16()), 3),
+            0xF8 => (Opcode::SaveHLSP(relative8()), 2, 12),
+            0x01 => (Opcode::Load16(Register::B, Register::C, immediate16()), 3, 12),
+            0x11 => (Opcode::Load16(Register::D, Register::E, immediate16()), 3, 12),
+            0x21 => (Opcode::Load16(Register::H, Register::L, immediate16()), 3, 12),
             0x31 => (
                 Opcode::Load16(Register::SPHi, Register::SPLo, immediate16()),
                 3,
+                12,
             ),
-            0x06 | 0x0E | 0x16 | 0x1E | 0x26 | 0x2E | 0x36 | 0x3E => (
+            0x06 | 0x0E | 0x16 | 0x1E | 0x26 | 0x2E | 0x3E => (
                 Opcode::Load8(nth_register((opcode_value & 0x38) >> 3), immediate8()),
                 2,
+                8,
             ),
-            0xF3 => (Opcode::DisableInterrupts, 1),
-            0xFB => (Opcode::EnableInterrupts, 1),
-            0xEA => (Opcode::SaveRegister(Register::A, immediate16()), 3),
-            0xFA => (Opcode::LoadAddress(Register::A, immediate16()), 3),
+            0x36 => (
+                Opcode::Load8(Register::SpecialLoadHL, immediate8()),
+                2,
+                12,
+            ),
+            0xF3 => (Opcode::DisableInterrupts, 1, 4),
+            0xFB => (Opcode::EnableInterrupts, 1, 4),
+            0xEA => (Opcode::SaveRegister(Register::A, immediate16()), 3, 16),
+            0xFA => (Opcode::LoadAddress(Register::A, immediate16()), 3, 16),
             0xE0 => (
                 Opcode::SaveRegister(Register::A, 0xff00 + (immediate8() as u16)),
                 2,
+                12,
             ),
             0xF0 => (
                 Opcode::LoadAddress(Register::A, 0xff00 + (immediate8() as u16)),
                 2,
+                12,
             ),
-            0xE2 => (Opcode::SaveAIntoRamC, 1),
-            0xF2 => (Opcode::LoadRamCIntoA, 1),
-            0xC9 => (Opcode::Return, 1),
-            0xC0 => (Opcode::ReturnCond(FlagBit::Zero, false), 1),
-            0xD0 => (Opcode::ReturnCond(FlagBit::Carry, false), 1),
-            0xC8 => (Opcode::ReturnCond(FlagBit::Zero, true), 1),
-            0xD8 => (Opcode::ReturnCond(FlagBit::Carry, true), 1),
-            0xD9 => (Opcode::ReturnInterrupt, 1),
-            0xCD => (Opcode::Call(immediate16()), 3),
-            0xC4 => (Opcode::CallCond(FlagBit::Zero, false, immediate16()), 3),
-            0xCC => (Opcode::CallCond(FlagBit::Zero, true, immediate16()), 3),
-            0xD4 => (Opcode::CallCond(FlagBit::Carry, false, immediate16()), 3),
-            0xDC => (Opcode::CallCond(FlagBit::Carry, true, immediate16()), 3),
-            0x76 => (Opcode::Halt, 1),
+            0xE2 => (Opcode::SaveAIntoRamC, 1, 8),
+            0xF2 => (Opcode::LoadRamCIntoA, 1, 8),
+            0xC9 => (Opcode::Return, 1, 16),
+            0xC0 => (Opcode::ReturnCond(FlagBit::Zero, false), 1, 0),
+            0xD0 => (Opcode::ReturnCond(FlagBit::Carry, false), 1, 0),
+            0xC8 => (Opcode::ReturnCond(FlagBit::Zero, true), 1, 0),
+            0xD8 => (Opcode::ReturnCond(FlagBit::Carry, true), 1, 0),
+            0xD9 => (Opcode::ReturnInterrupt, 1, 16),
+            0xCD => (Opcode::Call(immediate16()), 3, 24),
+            0xC4 => (Opcode::CallCond(FlagBit::Zero, false, immediate16()), 3, 0),
+            0xCC => (Opcode::CallCond(FlagBit::Zero, true, immediate16()), 3, 0),
+            0xD4 => (Opcode::CallCond(FlagBit::Carry, false, immediate16()), 3, 0),
+            0xDC => (Opcode::CallCond(FlagBit::Carry, true, immediate16()), 3, 0),
+            0x76 => (Opcode::Halt, 1, 4),
             0x0A => (
                 Opcode::LoadAddressFromRegisters(Register::A, Register::B, Register::C),
                 1,
+                8,
             ),
             0x1A => (
                 Opcode::LoadAddressFromRegisters(Register::A, Register::D, Register::E),
                 1,
+                8,
             ),
-            0x40..=0x7F => (
+            0x40..=0x7F =>
                 {
                     let right_register = nth_register(opcode_value & 0x7);
                     let left_register = nth_register((opcode_value & 0x38) >> 3);
                     if right_register == Register::SpecialLoadHL {
-                        Opcode::LoadAddressFromRegisters(left_register, Register::H, Register::L)
+                        (Opcode::LoadAddressFromRegisters(left_register, Register::H, Register::L), 1, 8)
                     } else if left_register == Register::SpecialLoadHL {
-                        Opcode::LoadRegisterIntoMemory(right_register, Register::H, Register::L)
+                        (Opcode::LoadRegisterIntoMemory(right_register, Register::H, Register::L), 1, 8)
                     } else {
-                        Opcode::LoadReg(left_register, right_register)
+                        (Opcode::LoadReg(left_register, right_register), 1, 4)
                     }
-                },
-                1,
-            ),
-            0xC5 => (Opcode::Push(Register::B, Register::C), 1),
-            0xC1 => (Opcode::Pop(Register::B, Register::C), 1),
-            0xD5 => (Opcode::Push(Register::D, Register::E), 1),
-            0xD1 => (Opcode::Pop(Register::D, Register::E), 1),
-            0xE5 => (Opcode::Push(Register::H, Register::L), 1),
-            0xE1 => (Opcode::Pop(Register::H, Register::L), 1),
-            0xF5 => (Opcode::Push(Register::A, Register::F), 1),
-            0xF1 => (Opcode::Pop(Register::A, Register::F), 1),
-            0x03 => (Opcode::IncPair(Register::B, Register::C), 1),
-            0x13 => (Opcode::IncPair(Register::D, Register::E), 1),
-            0x23 => (Opcode::IncPair(Register::H, Register::L), 1),
-            0x33 => (Opcode::IncPair(Register::SPHi, Register::SPLo), 1),
-            0x0B => (Opcode::DecPair(Register::B, Register::C), 1),
-            0x1B => (Opcode::DecPair(Register::D, Register::E), 1),
-            0x2B => (Opcode::DecPair(Register::H, Register::L), 1),
-            0x3B => (Opcode::DecPair(Register::SPHi, Register::SPLo), 1),
-            0x04 | 0x0C | 0x14 | 0x1C | 0x24 | 0x2C | 0x34 | 0x3C => {
-                (Opcode::Inc(nth_register((opcode_value & 0x38) >> 3)), 1)
+                }
+            0xC5 => (Opcode::Push(Register::B, Register::C), 1, 16),
+            0xC1 => (Opcode::Pop(Register::B, Register::C), 1, 12),
+            0xD5 => (Opcode::Push(Register::D, Register::E), 1, 16),
+            0xD1 => (Opcode::Pop(Register::D, Register::E), 1, 12),
+            0xE5 => (Opcode::Push(Register::H, Register::L), 1, 16),
+            0xE1 => (Opcode::Pop(Register::H, Register::L), 1, 12),
+            0xF5 => (Opcode::Push(Register::A, Register::F), 1, 16),
+            0xF1 => (Opcode::Pop(Register::A, Register::F), 1, 12),
+            0x03 => (Opcode::IncPair(Register::B, Register::C), 1, 8),
+            0x13 => (Opcode::IncPair(Register::D, Register::E), 1, 8),
+            0x23 => (Opcode::IncPair(Register::H, Register::L), 1, 8),
+            0x33 => (Opcode::IncPair(Register::SPHi, Register::SPLo), 1, 8),
+            0x0B => (Opcode::DecPair(Register::B, Register::C), 1, 8),
+            0x1B => (Opcode::DecPair(Register::D, Register::E), 1, 8),
+            0x2B => (Opcode::DecPair(Register::H, Register::L), 1, 8),
+            0x3B => (Opcode::DecPair(Register::SPHi, Register::SPLo), 1, 8),
+            0x04 | 0x0C | 0x14 | 0x1C | 0x24 | 0x2C | 0x3C => {
+                (Opcode::Inc(nth_register((opcode_value & 0x38) >> 3)), 1, 4)
             }
-            0x05 | 0x0D | 0x15 | 0x1D | 0x25 | 0x2D | 0x35 | 0x3D => {
-                (Opcode::Dec(nth_register((opcode_value & 0x38) >> 3)), 1)
+            0x34 => (Opcode::Inc(Register::SpecialLoadHL), 1, 12),
+            0x05 | 0x0D | 0x15 | 0x1D | 0x25 | 0x2D | 0x3D => {
+                (Opcode::Dec(nth_register((opcode_value & 0x38) >> 3)), 1, 4)
             }
-            0x22 => (Opcode::SaveHLInc, 1),
-            0x2A => (Opcode::LoadHLInc, 1),
-            0x32 => (Opcode::SaveHLDec, 1),
-            0x3A => (Opcode::LoadHLDec, 1),
-            0xA0..=0xA7 => (Opcode::And(nth_register(opcode_value & 0x7)), 1),
-            0xA8..=0xAF => (Opcode::Xor(nth_register(opcode_value & 0x7)), 1),
-            0xB0..=0xB7 => (Opcode::Or(nth_register(opcode_value & 0x7)), 1),
-            0xB8..=0xBF => (Opcode::Cp(nth_register(opcode_value & 0x7)), 1),
-            0xE6 => (Opcode::AndValue(immediate8()), 2),
-            0xEE => (Opcode::XorValue(immediate8()), 2),
-            0xF6 => (Opcode::OrValue(immediate8()), 2),
-            0xFE => (Opcode::CpValue(immediate8()), 2),
-            0x80..=0x87 => (Opcode::Add(nth_register(opcode_value & 0x7)), 1),
-            0x88..=0x8F => (Opcode::AddCarry(nth_register(opcode_value & 0x7)), 1),
-            0x90..=0x97 => (Opcode::Sub(nth_register(opcode_value & 0x7)), 1),
-            0x98..=0x9F => (Opcode::SubCarry(nth_register(opcode_value & 0x7)), 1),
-            0xC6 => (Opcode::AddValue(immediate8()), 2),
-            0xCE => (Opcode::AddCarryValue(immediate8()), 2),
-            0xD6 => (Opcode::SubValue(immediate8()), 2),
-            0xDE => (Opcode::SubCarryValue(immediate8()), 2),
-            0xF9 => (Opcode::LoadHLIntoSP, 1),
-            0x07 => (Opcode::RLCA, 1),
-            0x0F => (Opcode::RRCA, 1),
-            0x17 => (Opcode::RLA, 1),
-            0x1F => (Opcode::RRA, 1),
-            0x2F => (Opcode::CPL, 1),
-            0x3F => (Opcode::CCF, 1),
-            0x37 => (Opcode::SCF, 1),
-            0xCB => (self.cb_opcode(immediate8()), 2),
+            0x35 => (Opcode::Dec(Register::SpecialLoadHL), 1, 12),
+            0x22 => (Opcode::SaveHLInc, 1, 8),
+            0x2A => (Opcode::LoadHLInc, 1, 8),
+            0x32 => (Opcode::SaveHLDec, 1, 8),
+            0x3A => (Opcode::LoadHLDec, 1, 8),
+            0xA0..=0xA5 | 0xA7 => (Opcode::And(nth_register(opcode_value & 0x7)), 1, 4),
+            0xA6 => (Opcode::And(Register::SpecialLoadHL), 1, 8),
+            0xA8..=0xAD | 0xAF => (Opcode::Xor(nth_register(opcode_value & 0x7)), 1, 4),
+            0xAE => (Opcode::Xor(Register::SpecialLoadHL), 1, 8),
+            0xB0..=0xB5 | 0xB7 => (Opcode::Or(nth_register(opcode_value & 0x7)), 1, 4),
+            0xB6 => (Opcode::Or(Register::SpecialLoadHL), 1, 8),
+            0xB8..=0xBD | 0xBF => (Opcode::Cp(nth_register(opcode_value & 0x7)), 1, 4),
+            0xBE => (Opcode::Cp(Register::SpecialLoadHL), 1, 8),
+            0xE6 => (Opcode::AndValue(immediate8()), 2, 8),
+            0xEE => (Opcode::XorValue(immediate8()), 2, 8),
+            0xF6 => (Opcode::OrValue(immediate8()), 2, 8),
+            0xFE => (Opcode::CpValue(immediate8()), 2, 8),
+            0x80..=0x85 | 0x87 => (Opcode::Add(nth_register(opcode_value & 0x7)), 1, 4),
+            0x86 => (Opcode::Add(Register::SpecialLoadHL), 1, 8),
+            0x88..=0x8D | 0x8F => (Opcode::AddCarry(nth_register(opcode_value & 0x7)), 1, 4),
+            0x8E => (Opcode::AddCarry(Register::SpecialLoadHL), 1, 8),
+            0x90..=0x95 | 0x97 => (Opcode::Sub(nth_register(opcode_value & 0x7)), 1, 4),
+            0x96 => (Opcode::Sub(Register::SpecialLoadHL), 1, 8),
+            0x98..=0x9D | 0x9F => (Opcode::SubCarry(nth_register(opcode_value & 0x7)), 1, 4),
+            0x9E => (Opcode::SubCarry(Register::SpecialLoadHL), 1, 8),
+            0xC6 => (Opcode::AddValue(immediate8()), 2, 8),
+            0xCE => (Opcode::AddCarryValue(immediate8()), 2, 8),
+            0xD6 => (Opcode::SubValue(immediate8()), 2, 8),
+            0xDE => (Opcode::SubCarryValue(immediate8()), 2, 8),
+            0xF9 => (Opcode::LoadHLIntoSP, 1, 8),
+            0x07 => (Opcode::RLCA, 1, 4),
+            0x0F => (Opcode::RRCA, 1, 4),
+            0x17 => (Opcode::RLA, 1, 4),
+            0x1F => (Opcode::RRA, 1, 4),
+            0x2F => (Opcode::CPL, 1, 4),
+            0x3F => (Opcode::CCF, 1, 4),
+            0x37 => (Opcode::SCF, 1, 4),
+            0xCB => (self.cb_opcode(immediate8()), 2,
+                if (immediate8() & 0x7) == 0x6 { 16 } else { 8}),
             0xC7 | 0xCF | 0xD7 | 0xDF | 0xE7 | 0xEF | 0xF7 | 0xFF => {
-                (Opcode::Restart((opcode_value & 0x38) as u16), 1)
+                (Opcode::Restart((opcode_value & 0x38) as u16), 1, 16)
             }
             0xD3 | 0xDB | 0xDD | 0xE3 | 0xE4 | 0xEB | 0xEC | 0xED | 0xF4 | 0xFC | 0xFD => {
-                (Opcode::UnimplementedOpcode(opcode_value), 1)
+                (Opcode::UnimplementedOpcode(opcode_value), 1, 0)
             }
         }
     }
@@ -534,7 +560,7 @@ impl Interpreter {
         }
     }
 
-    fn opcode(&self, address: u16) -> (Opcode, u16) {
+    fn opcode(&self, address: u16) -> (Opcode, u16, u16) {
         let reader = |address| self.read_memory(address);
         self.rom.opcode(address, reader)
     }
@@ -543,7 +569,7 @@ impl Interpreter {
         let mut pc = self.program_state.program_counter;
         let mut result = BTreeMap::new();
         for _i in 0..3 {
-            let (opcode, opcode_size) = self.opcode(pc);
+            let (opcode, opcode_size, _cycle_count) = self.opcode(pc);
             result.insert(pc, opcode);
             pc += opcode_size;
         }
@@ -552,7 +578,7 @@ impl Interpreter {
 
     pub fn run_single_instruction(&mut self) -> () {
         let current_pc = self.program_state.program_counter;
-        let (opcode, opcode_size) = self.opcode(current_pc);
+        let (opcode, opcode_size, mut cycle_cost) = self.opcode(current_pc);
 
         if self.interrupts.master_enabled
             && ((0x1f & self.interrupts.enable_flag & self.interrupts.request_flag) != 0)
@@ -579,8 +605,10 @@ impl Interpreter {
             Opcode::Noop => (),
             Opcode::Jump(address) => jump_location = Some(address),
             Opcode::JumpCond(flag, set, address) => {
+                cycle_cost = 12;
                 if self.get_flag(flag) == set {
                     jump_location = Some(address);
+                    cycle_cost = 16;
                 }
             }
             Opcode::JumpHL => {
@@ -593,11 +621,13 @@ impl Interpreter {
                 );
             }
             Opcode::JumpRelativeCond(flag, set, relative_address) => {
+                cycle_cost = 8;
                 if self.get_flag(flag) == set {
                     jump_location = Some(
                         ((self.program_state.program_counter as i32) + (relative_address as i32))
                             as u16,
                     );
+                    cycle_cost = 12;
                 }
             }
             Opcode::DisableInterrupts => self.interrupts.master_enabled = false,
@@ -626,15 +656,19 @@ impl Interpreter {
             }
             Opcode::Call(address) => jump_location = self.do_call(address),
             Opcode::CallCond(flag, set, address) => {
+                cycle_cost = 12;
                 if self.get_flag(flag) == set {
                     jump_location = self.do_call(address);
+                    cycle_cost = 24;
                 }
             }
             Opcode::Restart(address) => jump_location = self.do_call(address),
             Opcode::Return => jump_location = self.do_return(),
             Opcode::ReturnCond(flag, set) => {
+                cycle_cost = 8;
                 if self.get_flag(flag) == set {
                     jump_location = self.do_return();
+                    cycle_cost = 20;
                 }
             }
             Opcode::ReturnInterrupt => {
@@ -833,7 +867,10 @@ impl Interpreter {
             self.program_state.program_counter = jump_location.unwrap();
         }
 
-        self.program_state.cycle_count += 1;
+        if cycle_cost == 0 {
+            panic!("Cycle cost not set correctly");
+        }
+        self.program_state.cycle_count += cycle_cost as u64;
     }
 
     fn do_math_reg(&mut self, register: Register, f: fn(u8, u8) -> math::Result) -> () {

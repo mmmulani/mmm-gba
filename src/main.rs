@@ -26,7 +26,7 @@ mod tests {
         assert_eq!(rom.ram_size(), 0);
     }
 
-    fn opcode(bytes: &[u8]) -> (gba::Opcode, u16) {
+    fn opcode(bytes: &[u8]) -> (gba::Opcode, u16, u16) {
         let mut bytes = bytes.to_vec();
         if bytes.len() < 3 {
             bytes.resize(3, 0);
@@ -37,16 +37,16 @@ mod tests {
 
     #[test]
     fn test_opcodes() {
-        assert_eq!(opcode(&[0x0]), (Opcode::Noop, 1));
+        assert_eq!(opcode(&[0x0]), (Opcode::Noop, 1, 4));
         assert_eq!(
             opcode(&[0x40]),
-            (Opcode::LoadReg(Register::B, Register::B), 1)
+            (Opcode::LoadReg(Register::B, Register::B), 1, 4)
         );
         assert_eq!(
             opcode(&[0x5A]),
-            (Opcode::LoadReg(Register::E, Register::D), 1)
+            (Opcode::LoadReg(Register::E, Register::D), 1, 4)
         );
-        assert_eq!(opcode(&[0x18, 0xFF]), (Opcode::JumpRelative(-1), 2));
+        assert_eq!(opcode(&[0x18, 0xFF]), (Opcode::JumpRelative(-1), 2, 12));
     }
 
     #[test]
