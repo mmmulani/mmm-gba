@@ -583,6 +583,8 @@ impl Interpreter {
         if can_interrupt
             && ((0x1f & self.interrupts.enable_flag & self.interrupts.request_flag) != 0)
         {
+            let old_master_enabled = self.interrupts.master_enabled;
+            let old_halted = self.interrupts.halted;
             self.interrupts.master_enabled = false;
             self.interrupts.halted = false;
             for bit in INTERRUPTS.iter() {
@@ -590,7 +592,7 @@ impl Interpreter {
                 if self.interrupts.enable_flag & self.interrupts.request_flag & picker != 0 {
                     let address = interrupt_address(*bit);
                     self.interrupts.request_flag = !picker & self.interrupts.request_flag;
-                    if self.interrupts.master_enabled {
+                    if old_master_enabled {
                         self.program_state.program_counter = self.do_call(address).unwrap();
                     }
                     return;
