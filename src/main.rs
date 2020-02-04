@@ -70,7 +70,7 @@ mod tests {
             assert!(passing);
         };
         test_cpu_instr("01-special");
-        //test_cpu_instr("02-interrupts");
+        test_cpu_instr("02-interrupts");
         test_cpu_instr("03-op sp,hl");
         test_cpu_instr("04-op r,imm");
         test_cpu_instr("05-op rp");
@@ -190,7 +190,11 @@ fn main() -> Result<(), std::io::Error> {
 
     {
         let mut interpreter = ref_inter.borrow_mut();
-        while interpreter.program_state.program_counter != 0xC2B5 {
+        while interpreter.program_state.program_counter != 0xC36F {
+            interpreter.run_single_instruction();
+        }
+
+        while interpreter.interrupts.request_flag == 0 {
             interpreter.run_single_instruction();
         }
     }
