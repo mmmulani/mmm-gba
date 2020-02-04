@@ -456,10 +456,10 @@ pub struct ProgramState {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Interrupts {
-    master_enabled: bool,
-    request_flag: u8,
-    enable_flag: u8,
-    halted: bool,
+    pub master_enabled: bool,
+    pub request_flag: u8,
+    pub enable_flag: u8,
+    pub halted: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -514,7 +514,7 @@ pub struct Interpreter {
     pub program_state: ProgramState,
     memory: Memory,
     pub output: String,
-    interrupts: Interrupts,
+    pub interrupts: Interrupts,
 }
 
 impl Interpreter {
@@ -596,6 +596,9 @@ impl Interpreter {
                     return;
                 }
             }
+            // TODO: fix timing
+            // It takes 20 clocks to dispatch an interrupt.
+            // If CPU is in HALT mode, another extra 4 clocks are needed
             panic!("could not find value to interrupt to");
         }
 

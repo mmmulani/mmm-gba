@@ -116,6 +116,7 @@ fn main() -> Result<(), std::io::Error> {
 
         let registers = interpreter.register_state;
         let program_state = interpreter.program_state;
+        let interrupts = interpreter.interrupts;
         c.call_on_name("registers", |v: &mut TextView| {
             v.set_content(format!(
                 "A   F   \n\
@@ -126,10 +127,15 @@ fn main() -> Result<(), std::io::Error> {
                  {:02X}  {:02X}\n\
                  H   L   \n\
                  {:02X}  {:02X}\n\
-                 SP0x{:04X}\n\
-                 PC0x{:04X}\n\
+                 SP  {:04X}\n\
+                 PC  {:04X}\n\
                  ZNHC\n\
-                 {}{}{}{}",
+                 {}{}{}{}\n\
+                 --------\n\
+                 IME {}\n\
+                 ...JSTLV\n\
+                 IE {:05b}\n\
+                 IF {:05b}",
                 registers.a,
                 registers.f,
                 registers.b,
@@ -144,6 +150,9 @@ fn main() -> Result<(), std::io::Error> {
                 ((registers.f & (1 << 6)) != 0) as u8,
                 ((registers.f & (1 << 5)) != 0) as u8,
                 ((registers.f & (1 << 4)) != 0) as u8,
+                if interrupts.master_enabled { 1 } else { 0 },
+                interrupts.enable_flag,
+                interrupts.request_flag,
             ));
         });
     };
@@ -181,7 +190,7 @@ fn main() -> Result<(), std::io::Error> {
 
     {
         let mut interpreter = ref_inter.borrow_mut();
-        while interpreter.program_state.program_counter != 0xC325 {
+        while interpreter.program_state.program_counter != 0xC2B5 {
             interpreter.run_single_instruction();
         }
     }
