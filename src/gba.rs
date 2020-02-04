@@ -867,11 +867,47 @@ impl Interpreter {
         if cycle_cost == 0 {
             panic!("Cycle cost not set correctly");
         }
+        let old_cycle_count = self.program_state.cycle_count;
         self.program_state.cycle_count += cycle_cost as u64;
+        self.handle_timer(old_cycle_count, self.program_state.cycle_count);
     }
 
-    fn handle_timer(&mut self) -> () {
+    fn handle_timer(&mut self, old_count: u64, new_count: u64) -> () {
         // CPU operates at 4.194304Mhz
+        // FF04 is Divider register, increments at 16384Hz (every 256 cycles)
+        // FF05 is incremented by timer, reset to FF06 when it overflows and interrupt is called
+        // FF07 is timer control
+        // bit 2 = on/off
+        // bit 1-0:
+        //   00:   4096Hz (every 1024 cycles)
+        //   01: 262144Hz (every 16 cycles)
+        //   10:  65536Hz (every 64 cycles)
+        //   11:  16384Hz (every 256 cycles)
+        if (new_count & !0xFF) > (old_count & !0xFF) {
+            let divider = self.read_memory(0xFF04);
+            self.save_memory(0xFF04, divider.wrapping_add(1));
+        }
+
+        let timer_control = self.read_memory(0xFF07);
+        if timer_control & 0x4 != 0 {
+            let negator = match timer_control & 0x3 {
+                0x00 => 0x3FF,
+                0x01 => 0xF,
+                0x10 => 0x3F,
+                0x11 => 0xFF,
+                _ => panic!("invalid timer control"),
+            };
+            if (new_count & !negator) > (old_count & !negator) {
+                let value = self.read_memory(0xFF05);
+                let (new_value, did_overflow) = value.overflowing_add(1);
+                if did_overflow {
+                    self.save_memory(0xFF05, self.read_memory(0xFF06));
+                    self.interrupts.request_flag = self.interrupts.request_flag | interrupt_picker(InterruptBit::Timer);
+                } else {
+                    self.save_memory(0xFF05, new_value);
+                }
+            }
+        }
     }
 
     fn do_math_reg(&mut self, register: Register, f: fn(u8, u8) -> math::Result) -> () {
