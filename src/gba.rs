@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::num::Wrapping;
 use std::panic;
+use std::result::Result;
 
 mod math;
 
@@ -450,7 +451,7 @@ pub struct RegisterState {
 pub struct ProgramState {
     pub stack_pointer: u16,
     pub program_counter: u16,
-    cycle_count: u64,
+    pub cycle_count: u64,
     rom_bank: u8,
 }
 
@@ -509,7 +510,7 @@ struct Memory {
 }
 
 pub struct Interpreter {
-    rom: ROM,
+    pub rom: ROM,
     pub register_state: RegisterState,
     pub program_state: ProgramState,
     memory: Memory,
@@ -938,6 +939,15 @@ impl Interpreter {
         }
     }
 
+    fn handle_lcd(&mut self, old_count: u64, new_count: u64) -> () {
+        // CPU operates at 4.194304Mhz
+        // V-Blank interrupt at 59.7Hz on a regular GB (every ~70,256 cycles)
+        if (new_count / 70256) > (old_count / 70256) {
+            self.interrupts.request_flag = self.interrupts.request_flag | interrupt_picker(InterruptBit::VBlank);
+        }
+
+    }
+
     fn do_math_reg(&mut self, register: Register, f: fn(u8, u8) -> math::Result) -> () {
         self.do_math(self.get_register_value(register), f);
     }
@@ -1200,6 +1210,23 @@ impl Interpreter {
         if result.is_err() {
             println!("registers: {:X?}", self.register_state);
             println!("program state: {:X?}", self.program_state);
+        }
+    }
+
+    pub fn safely_run_instruction(&mut self) -> Result<(), ()> {
+        let old_pc = self.program_state.program_counter;
+        panic::set_hook(Box::new(|_info| {
+
+        }));
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            self.run_single_instruction();
+        }));
+        if result.is_err() {
+            self.program_state.program_counter = old_pc;
+        }
+        match result {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
         }
     }
 }

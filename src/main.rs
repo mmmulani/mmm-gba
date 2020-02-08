@@ -7,6 +7,7 @@ use cursive::Cursive;
 use std::cell::RefCell;
 use std::env;
 use std::rc::Rc;
+use std::panic;
 
 mod gba;
 
@@ -135,7 +136,13 @@ fn main() -> Result<(), std::io::Error> {
                  IME {}\n\
                  ...JSTLV\n\
                  IE {:05b}\n\
-                 IF {:05b}",
+                 IF {:05b}\n\
+                 \n\
+                 {}\n\
+                 {:?}\n\
+                 RAM: {}\n\
+                 Cycles\n\
+                 {}",
                 registers.a,
                 registers.f,
                 registers.b,
@@ -152,7 +159,11 @@ fn main() -> Result<(), std::io::Error> {
                 ((registers.f & (1 << 4)) != 0) as u8,
                 if interrupts.master_enabled { 1 } else { 0 },
                 interrupts.enable_flag,
-                interrupts.request_flag,
+                interrupts.request_flag & 0x1F,
+                interpreter.rom.title(),
+                interpreter.rom.cartridge_type(),
+                interpreter.rom.ram_size(),
+                program_state.cycle_count,
             ));
         });
     };
@@ -164,9 +175,18 @@ fn main() -> Result<(), std::io::Error> {
     let mut input = EditView::new().filler(" ");
     {
         let ref_inter = ref_inter.clone();
-        input.set_on_submit(move |mut c, _str| {
+        input.set_on_submit(move |mut c, str| {
             let interpreter = &mut ref_inter.borrow_mut();
-            interpreter.run_single_instruction();
+            if str == "c" {
+                loop {
+                    let result = interpreter.safely_run_instruction();
+                    if result.is_err() {
+                        break;
+                    }
+                };
+            } else {
+                interpreter.run_single_instruction();
+            }
             update_screen(&mut c, interpreter);
         });
     }
@@ -190,7 +210,7 @@ fn main() -> Result<(), std::io::Error> {
 
     {
         let mut interpreter = ref_inter.borrow_mut();
-        while interpreter.program_state.program_counter != 0xC300 {
+        while interpreter.program_state.program_counter != 0x100 {
             interpreter.run_single_instruction();
         }
     }
