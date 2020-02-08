@@ -523,7 +523,7 @@ impl Interpreter {
             panic!("invalid header");
         }
         let ram_size = rom.ram_size();
-        Interpreter {
+        let mut ret = Interpreter {
             rom,
             register_state: RegisterState {
                 a: 0x01,
@@ -556,7 +556,9 @@ impl Interpreter {
                 enable_flag: 0x00,
                 halted: false,
             },
-        }
+        };
+        ret.save_memory(0xFF40, 0x91);
+        ret
     }
 
     fn opcode(&self, address: u16) -> (Opcode, u16, u16) {
@@ -606,9 +608,7 @@ impl Interpreter {
         }
 
         if self.interrupts.halted {
-            let old_cycle_count = self.program_state.cycle_count;
-            self.program_state.cycle_count += cycle_cost as u64;
-            self.handle_timer(old_cycle_count, self.program_state.cycle_count);
+            self.handle_cycle_increment(cycle_cost);
             return;
         }
 
@@ -874,8 +874,10 @@ impl Interpreter {
                 self.set_flag(FlagBit::AddSub, false);
                 self.set_flag(FlagBit::HalfCarry, false);
             }
-            Opcode::Halt => {
+            Opcode::Halt | Opcode::Stop => {
                 self.interrupts.halted = true;
+                println!("PC {:X}", self.program_state.program_counter);
+                println!("entering halt/stop, interrupts struct {:?}", self.interrupts);
             }
             _ => {
                 println!("unhandled opcode {:X?}", opcode);
@@ -889,8 +891,12 @@ impl Interpreter {
         if cycle_cost == 0 {
             panic!("Cycle cost not set correctly");
         }
+        self.handle_cycle_increment(cycle_cost);
+    }
+
+    fn handle_cycle_increment(&mut self, increment: u16) -> () {
         let old_cycle_count = self.program_state.cycle_count;
-        self.program_state.cycle_count += cycle_cost as u64;
+        self.program_state.cycle_count += increment as u64;
         self.handle_timer(old_cycle_count, self.program_state.cycle_count);
     }
 

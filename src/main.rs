@@ -190,11 +190,7 @@ fn main() -> Result<(), std::io::Error> {
 
     {
         let mut interpreter = ref_inter.borrow_mut();
-        while interpreter.program_state.program_counter != 0xC36F {
-            interpreter.run_single_instruction();
-        }
-
-        while interpreter.interrupts.request_flag == 0 {
+        while interpreter.program_state.program_counter != 0xC300 {
             interpreter.run_single_instruction();
         }
     }
