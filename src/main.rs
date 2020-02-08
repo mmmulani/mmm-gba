@@ -7,7 +7,6 @@ use cursive::Cursive;
 use std::cell::RefCell;
 use std::env;
 use std::rc::Rc;
-use std::panic;
 
 mod gba;
 

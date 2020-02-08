@@ -509,6 +509,10 @@ struct Memory {
     external_ram_enabled: bool,
 }
 
+pub struct ScreenOutput {
+    screen: Vec<(bool, u8)>,
+}
+
 pub struct Interpreter {
     pub rom: ROM,
     pub register_state: RegisterState,
@@ -516,6 +520,7 @@ pub struct Interpreter {
     memory: Memory,
     pub output: String,
     pub interrupts: Interrupts,
+    pub screen_output: ScreenOutput,
 }
 
 impl Interpreter {
@@ -556,6 +561,9 @@ impl Interpreter {
                 request_flag: 0xe0,
                 enable_flag: 0x00,
                 halted: false,
+            },
+            screen_output: ScreenOutput {
+                screen: vec![],
             },
         };
         ret.save_memory(0xFF40, 0x91);
@@ -899,6 +907,7 @@ impl Interpreter {
         let old_cycle_count = self.program_state.cycle_count;
         self.program_state.cycle_count += increment as u64;
         self.handle_timer(old_cycle_count, self.program_state.cycle_count);
+        self.handle_lcd(old_cycle_count, self.program_state.cycle_count);
     }
 
     fn handle_timer(&mut self, old_count: u64, new_count: u64) -> () {
@@ -941,11 +950,24 @@ impl Interpreter {
 
     fn handle_lcd(&mut self, old_count: u64, new_count: u64) -> () {
         // CPU operates at 4.194304Mhz
-        // V-Blank interrupt at 59.7Hz on a regular GB (every ~70,256 cycles)
-        if (new_count / 70256) > (old_count / 70256) {
-            self.interrupts.request_flag = self.interrupts.request_flag | interrupt_picker(InterruptBit::VBlank);
+        // V-Blank interrupt at 59.7Hz on a regular GB (every ~70,224 cycles)
+        // Increment LY every 456 cycles
+        // LY can be 0..=153
+        // when LY is 144..=153, we are V-blanking.
+        if (new_count / 456) > (old_count / 456) {
+            let old_ly = self.read_memory(0xFF44);
+            let new_ly = match old_ly {
+                0..=142 | 144..=152 => old_ly + 1,
+                143 => {
+                    self.interrupts.request_flag = self.interrupts.request_flag | interrupt_picker(InterruptBit::VBlank);
+                    self.do_render();
+                    old_ly + 1        
+                }
+                153 => 0,
+                154..=0xFF => panic!("unhandled LY value"),
+            };
+            self.save_memory(0xFF44, new_ly);
         }
-
     }
 
     fn do_math_reg(&mut self, register: Register, f: fn(u8, u8) -> math::Result) -> () {
@@ -1181,6 +1203,15 @@ impl Interpreter {
             }
             0xFF0F => self.interrupts.request_flag = value,
             0xFFFF => self.interrupts.enable_flag = value,
+            0xFF41 | 0xFF45 => panic!("lyc"),
+            0xFF46 => {
+                self.memory.other_ram[address as usize] = value;
+                let source = (value as u16) << 8;
+                for i in 0..0x9F {
+                    self.save_memory(0xFE00 + i, self.read_memory(source + i));
+                }
+            }
+            0xFF51..=0xFF55 => panic!("cgb vram"),
             0xFE00..=0xFFFF => {
                 if address == 0xFF01 {
                     self.output.push(value as char);
@@ -1206,6 +1237,9 @@ impl Interpreter {
     pub fn run_program(&mut self) -> () {
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| loop {
             self.run_single_instruction();
+            if self.program_state.cycle_count % 0x100000 == 0 {
+                self.debug_oam();
+            }
         }));
         if result.is_err() {
             println!("registers: {:X?}", self.register_state);
@@ -1228,5 +1262,64 @@ impl Interpreter {
             Ok(_) => Ok(()),
             Err(_) => Err(()),
         }
+    }
+
+    pub fn debug_oam(&self) -> () {
+        let offset = 0xFE00;
+        let mut nonzero = 0;
+        for i in 0..40 {
+            let pos = i * 4;
+            let y = self.read_memory(offset + pos);
+            let x = self.read_memory(offset + pos + 1);
+            let tile = self.read_memory(offset + pos + 2);
+            let attr = self.read_memory(offset + pos + 3);
+            if x + y + tile + attr > 0 {
+                nonzero += 1;
+            }
+            //println!("{}, y: {}, x: {}, tile: {}, attr: {:X}", i, y, x, tile, attr);
+        }
+        for i in 0..1024 {
+            let first = self.read_memory(0x9800 + i);
+            let second = self.read_memory(0x9C00 + i);
+            if first + second > 0 {
+                nonzero += 1;
+            }
+        }
+        if nonzero > 0 {
+            //println!("nonzero {}", nonzero);
+        }
+
+        println!("\n\n\n");
+        for y in 0..256 {
+            for x in 0..256 {
+                let (set, shade) = self.screen_output.screen[y * 256 + x];
+                print!("{}", shade);
+            }
+            println!("");
+        }
+    }
+
+    pub fn do_render(&mut self) -> () {
+        let line_size = 256;
+        let mut new_screen = vec![(false, 0); 256 * 256];
+        for line_y in 0..32 {
+            for line_x in 0..32 {
+                // TODO: check LCDC bit 3
+                let bg_tile = self.read_memory(0x9800 + (line_y * 32) + line_x);
+                let starting_address = 0x8000 + ((bg_tile as u16) * 16);
+                // tile is 8x8 (64) pixels
+                for y in 0..8 {
+                    let lsb_data = self.read_memory(starting_address + (y * 2));
+                    let msb_data = self.read_memory(starting_address + (y * 2) + 1);
+                    for x in 0..8 {
+                        let bit_picker = 1 << (7 - x);
+                        let shade = (if (msb_data & bit_picker) != 0 { 0b10 } else { 0b0 }) | (if (lsb_data & bit_picker) != 0 { 0b1 } else { 0b0 });
+                        let index = (line_size * (line_y as usize) * 8) + ((line_x as usize) * 8) + (x as usize) + ((y as usize) * line_size);
+                        new_screen[index] = (true, shade);
+                    }
+                }
+            }
+        }
+        self.screen_output.screen = new_screen;
     }
 }
