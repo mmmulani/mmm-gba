@@ -92,9 +92,52 @@ fn main() -> Result<(), std::io::Error> {
     let interpreter = gba::Interpreter::with_rom(rom);
     let ref_inter = Rc::new(RefCell::new(interpreter));
 
-    if args.len() == 3 && args[2] == "--run" {
+    let mut shouldRun = false;
+    let mut shouldShow = false;
+
+    for arg in args {
+        match arg.as_ref() {
+            "--run" => shouldRun = true,
+            "--show" => shouldShow = true,
+            _ => (),
+        }
+    }
+
+    if shouldRun {
         ref_inter.borrow_mut().run_program();
         return Ok(());
+    }
+
+    if shouldShow {
+        let mut inter = ref_inter.borrow_mut();
+        loop {
+            for _i in 0..70000 {
+                inter.run_single_instruction();
+            }
+            print!("\x1b[H");
+            for y in (0..144).step_by(2) {
+                for x in 0..160 {
+                    let top = inter.pixel_at(x, y);
+                    let bottom = inter.pixel_at(x, y + 1);
+                    let top_str = match top {
+                        0 => "30",
+                        1 => "90",
+                        2 => "37",
+                        _ => "97",
+                    };
+                    let bottom_str = match bottom {
+                        0 => "40",
+                        1 => "100",
+                        2 => "47",
+                        _ => "107",
+                    };
+                    print!("\x1b[0;{};{}m▀", top_str, bottom_str);
+                }
+                println!("\x1b[m");
+            }
+            println!("\x1b[0;37m█████████████████████████████████████████████████\x1b[m");
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
     }
 
     let mut app = Cursive::default();

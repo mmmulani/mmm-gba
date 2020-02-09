@@ -1289,14 +1289,18 @@ impl Interpreter {
             //println!("nonzero {}", nonzero);
         }
 
-        println!("\n\n\n");
+        /*println!("\n\n\n");
         for y in 0..256 {
             for x in 0..256 {
                 let (set, shade) = self.screen_output.screen[y * 256 + x];
                 print!("{}", shade);
             }
             println!("");
-        }
+        }*/
+    }
+
+    pub fn pixel_at(&self, x: usize, y: usize) -> u8 {
+        if x >= 256 || y >= 256 { 0 } else { self.screen_output.screen[y * 256 + x].1 }
     }
 
     pub fn do_render(&mut self) -> () {
