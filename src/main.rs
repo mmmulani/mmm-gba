@@ -92,23 +92,23 @@ fn main() -> Result<(), std::io::Error> {
     let interpreter = gba::Interpreter::with_rom(rom);
     let ref_inter = Rc::new(RefCell::new(interpreter));
 
-    let mut shouldRun = false;
-    let mut shouldShow = false;
+    let mut should_run = false;
+    let mut should_show = false;
 
     for arg in args {
         match arg.as_ref() {
-            "--run" => shouldRun = true,
-            "--show" => shouldShow = true,
+            "--run" => should_run = true,
+            "--show" => should_show = true,
             _ => (),
         }
     }
 
-    if shouldRun {
+    if should_run {
         ref_inter.borrow_mut().run_program();
         return Ok(());
     }
 
-    if shouldShow {
+    if should_show {
         let mut inter = ref_inter.borrow_mut();
         loop {
             for _i in 0..70000 {

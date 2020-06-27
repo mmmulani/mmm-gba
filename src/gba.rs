@@ -1154,7 +1154,7 @@ impl Interpreter {
             0xE000..=0xFDFF => panic!("unimplemented echo memory"),
             0xFF0F => self.interrupts.request_flag,
             0xFFFF => self.interrupts.enable_flag,
-            0xFE00..=0xFFFF => self.memory.other_ram[address as usize],
+            0xFE00..=0xFFFE => self.memory.other_ram[address as usize],
         }
     }
 
@@ -1212,7 +1212,7 @@ impl Interpreter {
                 }
             }
             0xFF51..=0xFF55 => panic!("cgb vram"),
-            0xFE00..=0xFFFF => {
+            0xFE00..=0xFFFE => {
                 if address == 0xFF01 {
                     self.output.push(value as char);
                     print!("{}", value as char);
