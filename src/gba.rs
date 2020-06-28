@@ -989,6 +989,7 @@ impl Interpreter {
                 154..=0xFF => panic!("unhandled LY value"),
             };
             self.memory.other_ram[0xFF44] = new_ly;
+            self.do_lyc_compare();
         }
 
         let current_ly = self.read_memory(0xFF44);
@@ -1024,6 +1025,12 @@ impl Interpreter {
         let old_stat = self.read_memory(0xFF41);
         let new_stat = (old_stat & 0xFB) | (if matching { 0x4 } else { 0x0 });
         self.memory.other_ram[0xFF41] = new_stat;
+    }
+
+    fn do_lyc_compare(&mut self) -> () {
+        let ly = self.read_memory(0xFF44);
+        let lyc = self.read_memory(0xFF45);
+        self.save_stat_match_flag(ly == lyc);
     }
 
     fn do_math_reg(&mut self, register: Register, f: fn(u8, u8) -> math::Result) -> () {
@@ -1264,8 +1271,14 @@ impl Interpreter {
                 let new_stat = (old_stat & 0x7) | (value & 0x78);
                 self.memory.other_ram[0xFF41] = new_stat;
             }
-            0xFF44 => self.memory.other_ram[address as usize] = 0,
-            0xFF45 => panic!("lyc"),
+            0xFF44 => {
+                self.memory.other_ram[address as usize] = 0;
+                self.do_lyc_compare();
+            }
+            0xFF45 => {
+                self.memory.other_ram[address as usize] = value;
+                self.do_lyc_compare();
+            }
             0xFF46 => {
                 self.memory.other_ram[address as usize] = value;
                 let source = (value as u16) << 8;
