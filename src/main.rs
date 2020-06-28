@@ -4,7 +4,7 @@ use cursive::traits::*;
 use cursive::views::{EditView, LinearLayout, TextView};
 use cursive::Cursive;
 
-use terminal_size::{Width, Height, terminal_size};
+use terminal_size::{terminal_size, Height, Width};
 
 use std::cell::RefCell;
 use std::env;
@@ -114,7 +114,7 @@ fn main() -> Result<(), std::io::Error> {
         let size = terminal_size();
         if let Some((Width(w), Height(h))) = size {
             if w < 160 || h < 74 {
-                println!("Your terminal must be at least 160 cols wide and 74 lines tall, it is currently {}x{}", w, h);    
+                println!("Your terminal must be at least 160 cols wide and 74 lines tall, it is currently {}x{}", w, h);
                 std::process::exit(0);
             }
         }
@@ -235,7 +235,7 @@ fn main() -> Result<(), std::io::Error> {
                     if result.is_err() {
                         break;
                     }
-                };
+                }
             } else {
                 interpreter.run_single_instruction();
             }

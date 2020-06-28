@@ -235,9 +235,21 @@ impl ROM {
                 0,
             ),
             0xF8 => (Opcode::SaveHLSP(relative8()), 2, 12),
-            0x01 => (Opcode::Load16(Register::B, Register::C, immediate16()), 3, 12),
-            0x11 => (Opcode::Load16(Register::D, Register::E, immediate16()), 3, 12),
-            0x21 => (Opcode::Load16(Register::H, Register::L, immediate16()), 3, 12),
+            0x01 => (
+                Opcode::Load16(Register::B, Register::C, immediate16()),
+                3,
+                12,
+            ),
+            0x11 => (
+                Opcode::Load16(Register::D, Register::E, immediate16()),
+                3,
+                12,
+            ),
+            0x21 => (
+                Opcode::Load16(Register::H, Register::L, immediate16()),
+                3,
+                12,
+            ),
             0x31 => (
                 Opcode::Load16(Register::SPHi, Register::SPLo, immediate16()),
                 3,
@@ -248,11 +260,7 @@ impl ROM {
                 2,
                 8,
             ),
-            0x36 => (
-                Opcode::Load8(Register::SpecialLoadHL, immediate8()),
-                2,
-                12,
-            ),
+            0x36 => (Opcode::Load8(Register::SpecialLoadHL, immediate8()), 2, 12),
             0xF3 => (Opcode::DisableInterrupts, 1, 4),
             0xFB => (Opcode::EnableInterrupts, 1, 4),
             0xEA => (Opcode::SaveRegister(Register::A, immediate16()), 3, 16),
@@ -291,18 +299,25 @@ impl ROM {
                 1,
                 8,
             ),
-            0x40..=0x7F =>
-                {
-                    let right_register = nth_register(opcode_value & 0x7);
-                    let left_register = nth_register((opcode_value & 0x38) >> 3);
-                    if right_register == Register::SpecialLoadHL {
-                        (Opcode::LoadAddressFromRegisters(left_register, Register::H, Register::L), 1, 8)
-                    } else if left_register == Register::SpecialLoadHL {
-                        (Opcode::LoadRegisterIntoMemory(right_register, Register::H, Register::L), 1, 8)
-                    } else {
-                        (Opcode::LoadReg(left_register, right_register), 1, 4)
-                    }
+            0x40..=0x7F => {
+                let right_register = nth_register(opcode_value & 0x7);
+                let left_register = nth_register((opcode_value & 0x38) >> 3);
+                if right_register == Register::SpecialLoadHL {
+                    (
+                        Opcode::LoadAddressFromRegisters(left_register, Register::H, Register::L),
+                        1,
+                        8,
+                    )
+                } else if left_register == Register::SpecialLoadHL {
+                    (
+                        Opcode::LoadRegisterIntoMemory(right_register, Register::H, Register::L),
+                        1,
+                        8,
+                    )
+                } else {
+                    (Opcode::LoadReg(left_register, right_register), 1, 4)
                 }
+            }
             0xC5 => (Opcode::Push(Register::B, Register::C), 1, 16),
             0xC1 => (Opcode::Pop(Register::B, Register::C), 1, 12),
             0xD5 => (Opcode::Push(Register::D, Register::E), 1, 16),
@@ -363,8 +378,11 @@ impl ROM {
             0x2F => (Opcode::CPL, 1, 4),
             0x3F => (Opcode::CCF, 1, 4),
             0x37 => (Opcode::SCF, 1, 4),
-            0xCB => (self.cb_opcode(immediate8()), 2,
-                if (immediate8() & 0x7) == 0x6 { 16 } else { 8}),
+            0xCB => (
+                self.cb_opcode(immediate8()),
+                2,
+                if (immediate8() & 0x7) == 0x6 { 16 } else { 8 },
+            ),
             0xC7 | 0xCF | 0xD7 | 0xDF | 0xE7 | 0xEF | 0xF7 | 0xFF => {
                 (Opcode::Restart((opcode_value & 0x38) as u16), 1, 16)
             }
@@ -562,9 +580,7 @@ impl Interpreter {
                 enable_flag: 0x00,
                 halted: false,
             },
-            screen_output: ScreenOutput {
-                screen: vec![],
-            },
+            screen_output: ScreenOutput { screen: vec![] },
         };
         ret.save_memory(0xFF40, 0x91);
         ret
@@ -886,7 +902,10 @@ impl Interpreter {
             Opcode::Halt | Opcode::Stop => {
                 self.interrupts.halted = true;
                 println!("PC {:X}", self.program_state.program_counter);
-                println!("entering halt/stop, interrupts struct {:?}", self.interrupts);
+                println!(
+                    "entering halt/stop, interrupts struct {:?}",
+                    self.interrupts
+                );
             }
             _ => {
                 println!("unhandled opcode {:X?}", opcode);
@@ -940,7 +959,8 @@ impl Interpreter {
                 let (new_value, did_overflow) = value.overflowing_add(1);
                 if did_overflow {
                     self.save_memory(0xFF05, self.read_memory(0xFF06));
-                    self.interrupts.request_flag = self.interrupts.request_flag | interrupt_picker(InterruptBit::Timer);
+                    self.interrupts.request_flag =
+                        self.interrupts.request_flag | interrupt_picker(InterruptBit::Timer);
                 } else {
                     self.save_memory(0xFF05, new_value);
                 }
@@ -949,25 +969,55 @@ impl Interpreter {
     }
 
     fn handle_lcd(&mut self, old_count: u64, new_count: u64) -> () {
+        const LINE_RENDER_CYCLE_COUNT: u64 = 456;
         // CPU operates at 4.194304Mhz
         // V-Blank interrupt at 59.7Hz on a regular GB (every ~70,224 cycles)
         // Increment LY every 456 cycles
         // LY can be 0..=153
         // when LY is 144..=153, we are V-blanking.
-        if (new_count / 456) > (old_count / 456) {
+        if (new_count / LINE_RENDER_CYCLE_COUNT) > (old_count / LINE_RENDER_CYCLE_COUNT) {
             let old_ly = self.read_memory(0xFF44);
             let new_ly = match old_ly {
                 0..=142 | 144..=152 => old_ly + 1,
                 143 => {
-                    self.interrupts.request_flag = self.interrupts.request_flag | interrupt_picker(InterruptBit::VBlank);
+                    self.interrupts.request_flag =
+                        self.interrupts.request_flag | interrupt_picker(InterruptBit::VBlank);
                     self.do_render();
-                    old_ly + 1        
+                    old_ly + 1
                 }
                 153 => 0,
                 154..=0xFF => panic!("unhandled LY value"),
             };
             self.save_memory(0xFF44, new_ly);
         }
+
+        let current_ly = self.read_memory(0xFF44);
+        let new_stat_mode_flag = match current_ly {
+            0..=143 => {
+                // Line render takes 456 cycles.
+                // Mode 2 for 80 cycles
+                // Mode 3 for 172 cycles
+                // Mode 0 for 204 cycles
+                match new_count % LINE_RENDER_CYCLE_COUNT {
+                    0..=80 => 2,
+                    81..=252 => 3,
+                    253..=456 => 0,
+                    _ => unreachable!(),
+                }
+            }
+            144..=153 => 1,
+            154..=0xFF => panic!("unhandled LY value"),
+        };
+        self.save_stat_mode_flag(new_stat_mode_flag)
+    }
+
+    fn save_stat_mode_flag(&mut self, mode_flag: u8) -> () {
+        if mode_flag > 0x3 {
+            panic!("Mode flag value {} given for STAT", mode_flag);
+        }
+        let old_stat = self.read_memory(0xFF41);
+        let new_stat = (old_stat & 0xFC) | mode_flag;
+        self.memory.other_ram[0xFF41] = new_stat;
     }
 
     fn do_math_reg(&mut self, register: Register, f: fn(u8, u8) -> math::Result) -> () {
@@ -1203,7 +1253,13 @@ impl Interpreter {
             }
             0xFF0F => self.interrupts.request_flag = value,
             0xFFFF => self.interrupts.enable_flag = value,
-            0xFF41 | 0xFF45 => panic!("lyc"),
+            0xFF41 => {
+                let old_stat = self.read_memory(0xFF41);
+                let new_stat = (old_stat & 0x7) | (value & 0x78);
+                self.memory.other_ram[0xFF41] = new_stat;
+            }
+            0xFF44 => self.memory.other_ram[address as usize] = 0,
+            0xFF45 => panic!("lyc"),
             0xFF46 => {
                 self.memory.other_ram[address as usize] = value;
                 let source = (value as u16) << 8;
@@ -1249,9 +1305,7 @@ impl Interpreter {
 
     pub fn safely_run_instruction(&mut self) -> Result<(), ()> {
         let old_pc = self.program_state.program_counter;
-        panic::set_hook(Box::new(|_info| {
-
-        }));
+        panic::set_hook(Box::new(|_info| {}));
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             self.run_single_instruction();
         }));
@@ -1300,7 +1354,11 @@ impl Interpreter {
     }
 
     pub fn pixel_at(&self, x: usize, y: usize) -> u8 {
-        if x >= 256 || y >= 256 { 0 } else { self.screen_output.screen[y * 256 + x].1 }
+        if x >= 256 || y >= 256 {
+            0
+        } else {
+            self.screen_output.screen[y * 256 + x].1
+        }
     }
 
     pub fn do_render(&mut self) -> () {
@@ -1317,8 +1375,19 @@ impl Interpreter {
                     let msb_data = self.read_memory(starting_address + (y * 2) + 1);
                     for x in 0..8 {
                         let bit_picker = 1 << (7 - x);
-                        let shade = (if (msb_data & bit_picker) != 0 { 0b10 } else { 0b0 }) | (if (lsb_data & bit_picker) != 0 { 0b1 } else { 0b0 });
-                        let index = (line_size * (line_y as usize) * 8) + ((line_x as usize) * 8) + (x as usize) + ((y as usize) * line_size);
+                        let shade = (if (msb_data & bit_picker) != 0 {
+                            0b10
+                        } else {
+                            0b0
+                        }) | (if (lsb_data & bit_picker) != 0 {
+                            0b1
+                        } else {
+                            0b0
+                        });
+                        let index = (line_size * (line_y as usize) * 8)
+                            + ((line_x as usize) * 8)
+                            + (x as usize)
+                            + ((y as usize) * line_size);
                         new_screen[index] = (true, shade);
                     }
                 }
