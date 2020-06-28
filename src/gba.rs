@@ -451,6 +451,10 @@ impl ROM {
     pub fn read_rom_bank(&self, bank: u8, address: usize) -> u8 {
         self.content[(0x4000 * (bank as usize)) + address]
     }
+
+    pub fn write_rom(&mut self, address: usize, value: u8) -> () {
+        self.content[address] = value
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1270,6 +1274,10 @@ impl Interpreter {
                         "MBC1 writing to rom at {:X} with value {:X}",
                         address, value
                     ),
+                },
+                MemoryBankType::ROM => match address {
+                    0x0000..=0x7FFF => self.rom.write_rom(address as usize, value),
+                    _ => panic!("Memory Bank Type ROM only writing to rom at {:X} with value {:X}", address, value),
                 },
                 _ => panic!(
                     "({:?}) writing to rom at {:X} with value {:X}",
