@@ -224,10 +224,10 @@ fn main() -> Result<(), std::io::Error> {
         .with_name("code")
         .scrollable()
         .scroll_strategy(cursive::view::ScrollStrategy::StickToBottom);
-    let mut input = EditView::new().filler(" ");
+    let mut input = EditView::new().filler(" ").with_name("input");
     {
         let ref_inter = ref_inter.clone();
-        input.set_on_submit(move |mut c, str| {
+        input.get_mut().set_on_submit(move |mut c, str| {
             let interpreter = &mut ref_inter.borrow_mut();
             if str == "c" {
                 loop {
@@ -266,6 +266,7 @@ fn main() -> Result<(), std::io::Error> {
         .child(sidebar);
 
     app.add_fullscreen_layer(panes);
+    app.focus_name("input");
 
     {
         let mut interpreter = ref_inter.borrow_mut();
