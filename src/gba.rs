@@ -966,8 +966,7 @@ impl Interpreter {
                 let (new_value, did_overflow) = value.overflowing_add(1);
                 if did_overflow {
                     self.save_memory(0xFF05, self.read_memory(0xFF06));
-                    self.interrupts.request_flag =
-                        self.interrupts.request_flag | interrupt_picker(InterruptBit::Timer);
+                    self.set_interrupt(InterruptBit::Timer);
                 } else {
                     self.save_memory(0xFF05, new_value);
                 }
@@ -987,8 +986,7 @@ impl Interpreter {
             let new_ly = match old_ly {
                 0..=142 | 144..=152 => old_ly + 1,
                 143 => {
-                    self.interrupts.request_flag =
-                        self.interrupts.request_flag | interrupt_picker(InterruptBit::VBlank);
+                    self.set_interrupt(InterruptBit::VBlank);
                     self.do_render();
                     old_ly + 1
                 }
@@ -1040,13 +1038,16 @@ impl Interpreter {
         self.save_stat_match_flag(ly == lyc);
 
         if self.is_stat_interrupt_enabled(LCDCInterruptBit::LYCLYCoincidence) && ly == lyc {
-            self.interrupts.request_flag =
-                self.interrupts.request_flag | interrupt_picker(InterruptBit::LCDStatus);
+            self.set_interrupt(InterruptBit::LCDStatus);
         }
     }
 
     fn is_stat_interrupt_enabled(&self, bit: LCDCInterruptBit) -> bool {
         self.read_memory(0xFF41) & (bit as u8) != 0
+    }
+
+    fn set_interrupt(&mut self, bit: InterruptBit) {
+        self.interrupts.request_flag = self.interrupts.request_flag | interrupt_picker(bit);
     }
 
     fn do_math_reg(&mut self, register: Register, f: fn(u8, u8) -> math::Result) -> () {
