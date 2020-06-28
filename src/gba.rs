@@ -988,7 +988,7 @@ impl Interpreter {
                 153 => 0,
                 154..=0xFF => panic!("unhandled LY value"),
             };
-            self.save_memory(0xFF44, new_ly);
+            self.memory.other_ram[0xFF44] = new_ly;
         }
 
         let current_ly = self.read_memory(0xFF44);
@@ -1017,6 +1017,12 @@ impl Interpreter {
         }
         let old_stat = self.read_memory(0xFF41);
         let new_stat = (old_stat & 0xFC) | mode_flag;
+        self.memory.other_ram[0xFF41] = new_stat;
+    }
+
+    fn save_stat_match_flag(&mut self, matching: bool) -> () {
+        let old_stat = self.read_memory(0xFF41);
+        let new_stat = (old_stat & 0xFB) | (if matching { 0x4 } else { 0x0 });
         self.memory.other_ram[0xFF41] = new_stat;
     }
 
