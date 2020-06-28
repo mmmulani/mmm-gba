@@ -1015,13 +1015,14 @@ impl Interpreter {
             154..=0xFF => panic!("unhandled LY value"),
         };
         let old_stat_mode_flag = self.read_memory(0xFF41) & 0x3;
-        if old_stat_mode_flag != new_stat_mode_flag {
-            if (new_stat_mode_flag == 0 && self.is_stat_interrupt_enabled(LCDCInterruptBit::HBlank))
-                || (new_stat_mode_flag == 1
-                    && self.is_stat_interrupt_enabled(LCDCInterruptBit::VBlank))
-                || (new_stat_mode_flag == 2
-                    && self.is_stat_interrupt_enabled(LCDCInterruptBit::OAM))
-            {
+        if old_stat_mode_flag != new_stat_mode_flag && new_stat_mode_flag != 3 {
+            let bit = match new_stat_mode_flag {
+                0 => LCDCInterruptBit::HBlank,
+                1 => LCDCInterruptBit::VBlank,
+                2 => LCDCInterruptBit::OAM,
+                _ => unreachable!(),
+            };
+            if self.is_stat_interrupt_enabled(bit) {
                 self.set_interrupt(InterruptBit::LCDStatus)
             }
         }
