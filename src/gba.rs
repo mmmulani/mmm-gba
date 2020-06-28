@@ -518,6 +518,13 @@ fn interrupt_address(bit: InterruptBit) -> u16 {
     }
 }
 
+pub enum LCDCInterruptBit {
+    LYCLYCoincidence = 1 << 6,
+    OAM = 1 << 5,
+    VBlank = 1 << 4,
+    HBlank = 1 << 3,
+}
+
 struct Memory {
     video_ram: Vec<u8>,
     work_ram_0: Vec<u8>,
@@ -1031,6 +1038,15 @@ impl Interpreter {
         let ly = self.read_memory(0xFF44);
         let lyc = self.read_memory(0xFF45);
         self.save_stat_match_flag(ly == lyc);
+
+        if self.is_stat_interrupt_enabled(LCDCInterruptBit::LYCLYCoincidence) && ly == lyc {
+            self.interrupts.request_flag =
+                self.interrupts.request_flag | interrupt_picker(InterruptBit::LCDStatus);
+        }
+    }
+
+    fn is_stat_interrupt_enabled(&self, bit: LCDCInterruptBit) -> bool {
+        self.read_memory(0xFF41) & (bit as u8) != 0
     }
 
     fn do_math_reg(&mut self, register: Register, f: fn(u8, u8) -> math::Result) -> () {
