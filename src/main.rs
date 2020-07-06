@@ -1,7 +1,7 @@
 extern crate cursive;
 
 use cursive::traits::*;
-use cursive::views::{EditView, LinearLayout, TextView};
+use cursive::views::{EditView, LinearLayout, NamedView, ScrollView, TextView};
 use cursive::Cursive;
 
 use terminal_size::{terminal_size, Height, Width};
@@ -9,6 +9,8 @@ use terminal_size::{terminal_size, Height, Width};
 use std::cell::RefCell;
 use std::env;
 use std::rc::Rc;
+
+use parse_int::parse;
 
 mod gba;
 
@@ -180,6 +182,9 @@ fn main() -> Result<(), std::io::Error> {
     fn update_screen(c: &mut Cursive, interpreter: &gba::Interpreter) {
         let instructions = interpreter.get_next_instructions();
         let mut first = true;
+        c.call_on_name("code_scroll", |v: &mut ScrollView<NamedView<TextView>>| {
+            v.set_scroll_strategy(cursive::view::ScrollStrategy::StickToBottom);
+        });
         for (address, opcode) in &instructions {
             c.call_on_name("code", |v: &mut TextView| {
                 v.append(format!(
@@ -191,6 +196,7 @@ fn main() -> Result<(), std::io::Error> {
             });
             first = false;
         }
+
 
         let registers = interpreter.register_state;
         let program_state = interpreter.program_state;
@@ -248,7 +254,8 @@ fn main() -> Result<(), std::io::Error> {
     let code_output = TextView::new(vec![" "; 200].join("") + &vec![""; 100].join("\n"))
         .with_name("code")
         .scrollable()
-        .scroll_strategy(cursive::view::ScrollStrategy::StickToBottom);
+        .scroll_strategy(cursive::view::ScrollStrategy::StickToBottom)
+        .with_name("code_scroll");
     let mut input = EditView::new().filler(" ").with_name("input");
     {
         let ref_inter = ref_inter.clone();
@@ -272,6 +279,15 @@ fn main() -> Result<(), std::io::Error> {
                 let args: Vec<&str> = str.split(" ").collect();
                 let amount = &args[1].parse::<u64>().unwrap();
                 for _ in 0..*amount {
+                    interpreter.run_single_instruction();
+                }
+            } else if str.starts_with("b") {
+                let args: Vec<&str> = str.split(" ").collect();
+                let pc = parse::<u16>(&args[1]).unwrap();
+                loop {
+                    if interpreter.program_state.program_counter == pc {
+                        break;
+                    }
                     interpreter.run_single_instruction();
                 }
             } else {
