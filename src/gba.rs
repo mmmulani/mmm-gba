@@ -7,6 +7,8 @@ const NINTENDO_LOGO: [u8; 48] = [
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fs;
+use std::io;
+use std::io::Write;
 use std::num::Wrapping;
 use std::panic;
 use std::result::Result;
@@ -617,17 +619,24 @@ impl Interpreter {
         let current_pc = self.program_state.program_counter;
         let (opcode, opcode_size, mut cycle_cost) = self.opcode(current_pc);
 
-        let can_interrupt = self.interrupts.master_enabled || self.interrupts.halted;
-        if can_interrupt
-            && ((0x1f & self.interrupts.enable_flag & self.interrupts.request_flag) != 0)
+        // There are two ways an interrupt can be triggered:
+        // 1) The program has enabled interrupts, and run into an action causing an interrupt
+        //    that it cares about.
+        // 2) The program has halted, and an interrupt is triggered.
+        let interrupt_normally = self.interrupts.master_enabled &&
+            ((0x1f & self.interrupts.enable_flag & self.interrupts.request_flag) != 0);
+        let interrupt_halted = self.interrupts.halted && (self.interrupts.request_flag != 0);
+        if interrupt_normally || interrupt_halted
         {
             let old_master_enabled = self.interrupts.master_enabled;
             self.interrupts.master_enabled = false;
             self.interrupts.halted = false;
+            // To handle the case where the CPU is halted, we use a fake enable flag.
+            let enable_flag = if interrupt_halted { 0xff } else { self.interrupts.enable_flag };
             for bit in INTERRUPTS.iter() {
                 let picker = interrupt_picker(*bit);
-                if self.interrupts.enable_flag & self.interrupts.request_flag & picker != 0 {
-                    if old_master_enabled {
+                if enable_flag & self.interrupts.request_flag & picker != 0 {
+                    if old_master_enabled || interrupt_halted {
                         let address = interrupt_address(*bit);
                         self.interrupts.request_flag = !picker & self.interrupts.request_flag;
                         self.program_state.program_counter = self.do_call(address).unwrap();
@@ -912,11 +921,6 @@ impl Interpreter {
             }
             Opcode::Halt | Opcode::Stop => {
                 self.interrupts.halted = true;
-                println!("PC {:X}", self.program_state.program_counter);
-                println!(
-                    "entering halt/stop, interrupts struct {:?}",
-                    self.interrupts
-                );
             }
             _ => {
                 println!("unhandled opcode {:X?}", opcode);
@@ -1328,6 +1332,7 @@ impl Interpreter {
                 if address == 0xFF01 {
                     self.output.push(value as char);
                     print!("{}", value as char);
+                    io::stdout().flush();
                 }
                 self.memory.other_ram[address as usize] = value;
             }
