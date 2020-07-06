@@ -71,6 +71,30 @@ mod tests {
             }
             assert!(passing);
         };
+        let test_rom = |name| {
+            let rom = gba::ROM::from_path(&format!(
+                "test-roms/blargg/{}.gb",
+                name
+            ));
+            let mut interpreter = gba::Interpreter::with_rom(rom);
+            let mut passing = false;
+            let mut old_output_length = 0;
+            loop {
+                for _j in 0..10000000 {
+                    interpreter.run_single_instruction();
+                }
+                let new_length = interpreter.output.len();
+                if old_output_length == new_length {
+                    break;
+                }
+                old_output_length = new_length;
+                if interpreter.output.contains("Passed") || interpreter.output.contains("Fail") {
+                    passing = interpreter.output.contains("Passed");
+                    break;
+                }
+            }
+            assert!(passing);
+        };
         test_cpu_instr("01-special");
         test_cpu_instr("02-interrupts");
         test_cpu_instr("03-op sp,hl");
@@ -83,6 +107,7 @@ mod tests {
         test_cpu_instr("09-op r,r");
         test_cpu_instr("10-bit ops");
         test_cpu_instr("11-op a,(hl)");
+        test_rom("cpu_instrs/cpu_instrs");
     }
 }
 

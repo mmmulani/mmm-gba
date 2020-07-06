@@ -631,12 +631,10 @@ impl Interpreter {
             let old_master_enabled = self.interrupts.master_enabled;
             self.interrupts.master_enabled = false;
             self.interrupts.halted = false;
-            // To handle the case where the CPU is halted, we use a fake enable flag.
-            let enable_flag = if interrupt_halted { 0xff } else { self.interrupts.enable_flag };
             for bit in INTERRUPTS.iter() {
                 let picker = interrupt_picker(*bit);
-                if enable_flag & self.interrupts.request_flag & picker != 0 {
-                    if old_master_enabled || interrupt_halted {
+                if self.interrupts.enable_flag & self.interrupts.request_flag & picker != 0 {
+                    if old_master_enabled {
                         let address = interrupt_address(*bit);
                         self.interrupts.request_flag = !picker & self.interrupts.request_flag;
                         self.program_state.program_counter = self.do_call(address).unwrap();
@@ -649,7 +647,9 @@ impl Interpreter {
             // If CPU is in HALT mode, another extra 4 clocks are needed
 
             // TODO: implement halt bug
-            panic!("could not find value to interrupt to");
+            if !interrupt_halted {
+                panic!("could not find value to interrupt to");
+            }
         }
 
         if self.interrupts.halted {
