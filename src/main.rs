@@ -74,10 +74,7 @@ mod tests {
             assert!(passing);
         };
         let test_rom = |name| {
-            let rom = gba::ROM::from_path(&format!(
-                "test-roms/blargg/{}.gb",
-                name
-            ));
+            let rom = gba::ROM::from_path(&format!("test-roms/blargg/{}.gb", name));
             let mut interpreter = gba::Interpreter::with_rom(rom);
             let mut passing = false;
             let mut old_output_length = 0;
@@ -110,6 +107,7 @@ mod tests {
         test_cpu_instr("10-bit ops");
         test_cpu_instr("11-op a,(hl)");
         test_rom("cpu_instrs/cpu_instrs");
+        test_rom("instr_timing/instr_timing");
     }
 }
 
@@ -196,7 +194,6 @@ fn main() -> Result<(), std::io::Error> {
             });
             first = false;
         }
-
 
         let registers = interpreter.register_state;
         let program_state = interpreter.program_state;

@@ -380,11 +380,19 @@ impl ROM {
             0x2F => (Opcode::CPL, 1, 4),
             0x3F => (Opcode::CCF, 1, 4),
             0x37 => (Opcode::SCF, 1, 4),
-            0xCB => (
-                self.cb_opcode(immediate8()),
-                2,
-                if (immediate8() & 0x7) == 0x6 { 16 } else { 8 },
-            ),
+            0xCB => {
+                let cb_instr = immediate8();
+                let cycle_count = if (cb_instr & 0x7) == 0x6 {
+                    if cb_instr >= 0x40 && cb_instr <= 0x7F {
+                        12
+                    } else {
+                        16
+                    }
+                } else {
+                    8
+                };
+                (self.cb_opcode(cb_instr), 2, cycle_count)
+            }
             0xC7 | 0xCF | 0xD7 | 0xDF | 0xE7 | 0xEF | 0xF7 | 0xFF => {
                 (Opcode::Restart((opcode_value & 0x38) as u16), 1, 16)
             }
@@ -623,11 +631,10 @@ impl Interpreter {
         // 1) The program has enabled interrupts, and run into an action causing an interrupt
         //    that it cares about.
         // 2) The program has halted, and an interrupt is triggered.
-        let interrupt_normally = self.interrupts.master_enabled &&
-            ((0x1f & self.interrupts.enable_flag & self.interrupts.request_flag) != 0);
+        let interrupt_normally = self.interrupts.master_enabled
+            && ((0x1f & self.interrupts.enable_flag & self.interrupts.request_flag) != 0);
         let interrupt_halted = self.interrupts.halted && (self.interrupts.request_flag != 0);
-        if interrupt_normally || interrupt_halted
-        {
+        if interrupt_normally || interrupt_halted {
             let old_master_enabled = self.interrupts.master_enabled;
             self.interrupts.master_enabled = false;
             self.interrupts.halted = false;
@@ -970,7 +977,8 @@ impl Interpreter {
                 0b11 => 8,
                 _ => panic!("invalid timer control"),
             };
-            let timer_difference = (new_count >> bit_shift_amount) - (old_count >> bit_shift_amount);
+            let timer_difference =
+                (new_count >> bit_shift_amount) - (old_count >> bit_shift_amount);
             if timer_difference > 0 {
                 let value = self.read_memory(0xFF05);
                 let (new_value, did_overflow) = value.overflowing_add(timer_difference as u8);
@@ -1283,7 +1291,10 @@ impl Interpreter {
                 },
                 MemoryBankType::ROM => match address {
                     0x0000..=0x7FFF => self.rom.write_rom(address as usize, value),
-                    _ => panic!("Memory Bank Type ROM only writing to rom at {:X} with value {:X}", address, value),
+                    _ => panic!(
+                        "Memory Bank Type ROM only writing to rom at {:X} with value {:X}",
+                        address, value
+                    ),
                 },
                 _ => panic!(
                     "({:?}) writing to rom at {:X} with value {:X}",
