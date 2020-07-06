@@ -243,6 +243,12 @@ fn main() -> Result<(), std::io::Error> {
                 while interpreter.program_state.cycle_count < target {
                     interpreter.run_single_instruction();
                 }
+            } else if str.starts_with("o") {
+                let args: Vec<&str> = str.split(" ").collect();
+                let amount = &args[1].parse::<u64>().unwrap();
+                for _ in 0..*amount {
+                    interpreter.run_single_instruction();
+                }
             } else {
                 interpreter.run_single_instruction();
             }
