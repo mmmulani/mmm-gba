@@ -955,23 +955,25 @@ impl Interpreter {
         //   01: 262144Hz (every 16 cycles)
         //   10:  65536Hz (every 64 cycles)
         //   11:  16384Hz (every 256 cycles)
-        if (new_count & !0xFF) > (old_count & !0xFF) {
+        let difference = (new_count >> 8) - (old_count >> 8);
+        if difference > 0 {
             let divider = self.read_memory(0xFF04);
-            self.save_memory(0xFF04, divider.wrapping_add(1));
+            self.save_memory(0xFF04, divider.wrapping_add(difference as u8));
         }
 
         let timer_control = self.read_memory(0xFF07);
         if timer_control & 0x4 != 0 {
-            let negator = match timer_control & 0x3 {
-                0b00 => 0x3FF,
-                0b01 => 0xF,
-                0b10 => 0x3F,
-                0b11 => 0xFF,
+            let bit_shift_amount = match timer_control & 0x3 {
+                0b00 => 10,
+                0b01 => 4,
+                0b10 => 6,
+                0b11 => 8,
                 _ => panic!("invalid timer control"),
             };
-            if (new_count & !negator) > (old_count & !negator) {
-                let value = self.memory.other_ram[0xFF05];//self.read_memory(0xFF05);
-                let (new_value, did_overflow) = value.overflowing_add(1);
+            let timer_difference = (new_count >> bit_shift_amount) - (old_count >> bit_shift_amount);
+            if timer_difference > 0 {
+                let value = self.read_memory(0xFF05);
+                let (new_value, did_overflow) = value.overflowing_add(timer_difference as u8);
                 if did_overflow {
                     self.save_memory(0xFF05, self.read_memory(0xFF06));
                     self.set_interrupt(InterruptBit::Timer);
@@ -1242,9 +1244,6 @@ impl Interpreter {
     }
 
     fn read_memory(&self, address: u16) -> u8 {
-        if address == 0xFF05 {
-            //println!("Reading from 0xFF05, current PC {:X}", self.program_state.program_counter);
-        }
         match address {
             0x0000..=0x3FFF => self.rom.read_rom(address as usize),
             0x4000..=0x7FFF => self
