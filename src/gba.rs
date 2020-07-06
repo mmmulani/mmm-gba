@@ -1332,7 +1332,7 @@ impl Interpreter {
                 if address == 0xFF01 {
                     self.output.push(value as char);
                     print!("{}", value as char);
-                    io::stdout().flush();
+                    io::stdout().flush().ok();
                 }
                 self.memory.other_ram[address as usize] = value;
             }

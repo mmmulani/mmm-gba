@@ -297,7 +297,7 @@ fn main() -> Result<(), std::io::Error> {
         .child(sidebar);
 
     app.add_fullscreen_layer(panes);
-    app.focus_name("input");
+    app.focus_name("input").ok();
 
     {
         let mut interpreter = ref_inter.borrow_mut();
