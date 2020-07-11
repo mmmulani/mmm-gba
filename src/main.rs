@@ -108,6 +108,7 @@ mod tests {
         test_cpu_instr("11-op a,(hl)");
         test_rom("cpu_instrs/cpu_instrs");
         test_rom("instr_timing/instr_timing");
+        test_rom("mem_timing/mem_timing");
     }
 }
 
