@@ -13,6 +13,7 @@ use std::num::Wrapping;
 use std::panic;
 use std::result::Result;
 
+mod constants;
 mod math;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -603,7 +604,7 @@ impl Interpreter {
             },
             screen_output: ScreenOutput { screen: vec![] },
         };
-        ret.save_memory(0xFF40, 0x91);
+        ret.save_memory(constants::LCDC, 0x91);
         ret
     }
 
@@ -1268,6 +1269,19 @@ impl Interpreter {
         }
     }
 
+    fn read_memory_bit(&self, address: u16, bit: u8) -> bool {
+        assert!(bit <= 7);
+        (self.read_memory(address) & (1 << bit)) != 0
+    }
+
+    fn cond_memory_bit<T>(&self, address: u16, bit: u8, not_set: T, set: T) -> T {
+        if self.read_memory_bit(address, bit) {
+            set
+        } else {
+            not_set
+        }
+    }
+
     fn save_memory(&mut self, address: u16, value: u8) -> () {
         match address {
             0xFF70 => panic!("writing to ram bank switcher"),
@@ -1428,45 +1442,58 @@ impl Interpreter {
     }
 
     pub fn pixel_at(&self, x: usize, y: usize) -> u8 {
-        if x >= 256 || y >= 256 {
+        if x >= 160 || y >= 144 {
             0
         } else {
-            self.screen_output.screen[y * 256 + x].1
+            self.screen_output.screen[y * 160 + x].1
         }
     }
 
     pub fn do_render(&mut self) -> () {
-        let line_size = 256;
-        let mut new_screen = vec![(false, 0); 256 * 256];
-        for line_y in 0..32 {
-            for line_x in 0..32 {
-                // TODO: check LCDC bit 3
-                let bg_tile = self.read_memory(0x9800 + (line_y * 32) + line_x);
-                let starting_address = 0x8000 + ((bg_tile as u16) * 16);
-                // tile is 8x8 (64) pixels
-                for y in 0..8 {
-                    let lsb_data = self.read_memory(starting_address + (y * 2));
-                    let msb_data = self.read_memory(starting_address + (y * 2) + 1);
-                    for x in 0..8 {
-                        let bit_picker = 1 << (7 - x);
-                        let shade = (if (msb_data & bit_picker) != 0 {
-                            0b10
-                        } else {
-                            0b0
-                        }) | (if (lsb_data & bit_picker) != 0 {
-                            0b1
-                        } else {
-                            0b0
-                        });
-                        let index = (line_size * (line_y as usize) * 8)
-                            + ((line_x as usize) * 8)
-                            + (x as usize)
-                            + ((y as usize) * line_size);
-                        new_screen[index] = (true, shade);
-                    }
-                }
+        let bg_tile_start = self.cond_memory_bit(constants::LCDC, 3, 0x9800, 0x9C00);
+        let tile_start = self.cond_memory_bit(constants::LCDC, 4, 0x8800, 0x8000);
+        let scx = self.read_memory(constants::SCX);
+        let scy = self.read_memory(constants::SCY);
+        let mut new_screen = vec![(false, 0); 160 * 144];
+        for y in 0..144 {
+            for x in 0..160 {
+                let index: usize = (160 * y) + x;
+                let shifted_x = ((scx as usize) + x) % 160;
+                let shifted_y = ((scy as usize) + y) % 144;
+                new_screen[index] = (
+                    true,
+                    self.shade_at_point(
+                        shifted_x as u16,
+                        shifted_y as u16,
+                        bg_tile_start,
+                        tile_start,
+                    ),
+                );
             }
         }
         self.screen_output.screen = new_screen;
+    }
+
+    // 0 <= x, y <= 256
+    fn shade_at_point(&self, x: u16, y: u16, bg_tile_start: u16, tile_start: u16) -> u8 {
+        let tile_y = y / 8;
+        let tile_x = x / 8;
+        let bg_tile = self.read_memory(bg_tile_start + (tile_y * 32) + tile_x);
+        let starting_address = tile_start + ((bg_tile as u16) * 16);
+        let inner_tile_x = x % 8;
+        let inner_tile_y = y % 8;
+        let lsb_data = self.read_memory(starting_address + (inner_tile_y * 2));
+        let msb_data = self.read_memory(starting_address + (inner_tile_y * 2) + 1);
+        let bit_picker = 1 << (7 - inner_tile_x);
+        let shade = (if (msb_data & bit_picker) != 0 {
+            0b10
+        } else {
+            0b0
+        }) | (if (lsb_data & bit_picker) != 0 {
+            0b1
+        } else {
+            0b0
+        });
+        shade
     }
 }
