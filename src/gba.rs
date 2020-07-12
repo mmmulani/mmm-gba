@@ -1015,7 +1015,7 @@ impl Interpreter {
                 153 => 0,
                 154..=0xFF => panic!("unhandled LY value"),
             };
-            self.memory.other_ram[constants::LY as usize] = new_ly;
+            self._save_memory(constants::LY, new_ly);
             self.do_lyc_compare();
         }
 
@@ -1297,7 +1297,11 @@ impl Interpreter {
                 panic!("");
             }
         }
-        self._save_memory(address, value)
+        let modified_value = match address {
+            constants::LY => 0,
+            _ => value,
+        };
+        self._save_memory(address, modified_value)
     }
 
     fn _save_memory(&mut self, address: u16, value: u8) -> () {
@@ -1357,11 +1361,7 @@ impl Interpreter {
                 let new_stat = (old_stat & 0x7) | (value & 0x78);
                 self.memory.other_ram[0xFF41] = new_stat;
             }
-            constants::LY => {
-                self.memory.other_ram[address as usize] = 0;
-                self.do_lyc_compare();
-            }
-            0xFF45 => {
+            constants::LY | 0xFF45 => {
                 self.memory.other_ram[address as usize] = value;
                 self.do_lyc_compare();
             }
