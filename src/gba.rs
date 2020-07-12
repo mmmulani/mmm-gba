@@ -13,6 +13,9 @@ use std::num::Wrapping;
 use std::panic;
 use std::result::Result;
 
+// Used for debugging.
+static CALL_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 mod constants;
 mod math;
 
@@ -1001,7 +1004,7 @@ impl Interpreter {
         // LY can be 0..=153
         // when LY is 144..=153, we are V-blanking.
         if (new_count / LINE_RENDER_CYCLE_COUNT) > (old_count / LINE_RENDER_CYCLE_COUNT) {
-            let old_ly = self.read_memory(0xFF44);
+            let old_ly = self.read_memory(constants::LY);
             let new_ly = match old_ly {
                 0..=142 | 144..=152 => old_ly + 1,
                 143 => {
@@ -1012,11 +1015,11 @@ impl Interpreter {
                 153 => 0,
                 154..=0xFF => panic!("unhandled LY value"),
             };
-            self.memory.other_ram[0xFF44] = new_ly;
+            self.memory.other_ram[constants::LY as usize] = new_ly;
             self.do_lyc_compare();
         }
 
-        let current_ly = self.read_memory(0xFF44);
+        let current_ly = self.read_memory(constants::LY);
         let new_stat_mode_flag = match current_ly {
             0..=143 => {
                 // Line render takes 456 cycles.
@@ -1034,15 +1037,19 @@ impl Interpreter {
             154..=0xFF => panic!("unhandled LY value"),
         };
         let old_stat_mode_flag = self.read_memory(0xFF41) & 0x3;
-        if old_stat_mode_flag != new_stat_mode_flag && new_stat_mode_flag != 3 {
-            let bit = match new_stat_mode_flag {
-                0 => LCDCInterruptBit::HBlank,
-                1 => LCDCInterruptBit::VBlank,
-                2 => LCDCInterruptBit::OAM,
-                _ => unreachable!(),
-            };
-            if self.is_stat_interrupt_enabled(bit) {
-                self.set_interrupt(InterruptBit::LCDStatus)
+        if old_stat_mode_flag != new_stat_mode_flag {
+            if new_stat_mode_flag == 3 {
+                self.do_render_line(self.read_memory(constants::LY));
+            } else {
+                let bit = match new_stat_mode_flag {
+                    0 => LCDCInterruptBit::HBlank,
+                    1 => LCDCInterruptBit::VBlank,
+                    2 => LCDCInterruptBit::OAM,
+                    _ => unreachable!(),
+                };
+                if self.is_stat_interrupt_enabled(bit) {
+                    self.set_interrupt(InterruptBit::LCDStatus)
+                }
             }
         }
         self.save_stat_mode_flag(new_stat_mode_flag)
@@ -1064,7 +1071,7 @@ impl Interpreter {
     }
 
     fn do_lyc_compare(&mut self) -> () {
-        let ly = self.read_memory(0xFF44);
+        let ly = self.read_memory(constants::LY);
         let lyc = self.read_memory(0xFF45);
         self.save_stat_match_flag(ly == lyc);
 
@@ -1283,6 +1290,17 @@ impl Interpreter {
     }
 
     fn save_memory(&mut self, address: u16, value: u8) -> () {
+        if address == constants::LCDC && value != 0x91 {
+            println!("saving value to LCDC {:X}, PC {:X}", value, self.program_state.program_counter);
+            CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if CALL_COUNT.load(std::sync::atomic::Ordering::SeqCst) == 50 {
+                panic!("");
+            }
+        }
+        self._save_memory(address, value)
+    }
+
+    fn _save_memory(&mut self, address: u16, value: u8) -> () {
         match address {
             0xFF70 => panic!("writing to ram bank switcher"),
             0x0000..=0x7FFF => match self.rom.cartridge_type() {
@@ -1339,7 +1357,7 @@ impl Interpreter {
                 let new_stat = (old_stat & 0x7) | (value & 0x78);
                 self.memory.other_ram[0xFF41] = new_stat;
             }
-            0xFF44 => {
+            constants::LY => {
                 self.memory.other_ram[address as usize] = 0;
                 self.do_lyc_compare();
             }
@@ -1474,6 +1492,10 @@ impl Interpreter {
             }
         }
         self.screen_output.screen = new_screen;
+    }
+
+    pub fn do_render_line(&mut self, line: u8) -> () {
+        //println!("at this moment, lcdc {:X}", self.read_memory(constants::LCDC));
     }
 
     // 0 <= x, y <= 256

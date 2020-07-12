@@ -268,15 +268,15 @@ fn main() -> Result<(), std::io::Error> {
                 }
             } else if str.starts_with("x") {
                 let args: Vec<&str> = str.split(" ").collect();
-                let amount = &args[1].parse::<u64>().unwrap();
+                let amount = parse::<u64>(&args[1]).unwrap();
                 let target = interpreter.program_state.cycle_count + amount;
                 while interpreter.program_state.cycle_count < target {
                     interpreter.run_single_instruction();
                 }
             } else if str.starts_with("o") {
                 let args: Vec<&str> = str.split(" ").collect();
-                let amount = &args[1].parse::<u64>().unwrap();
-                for _ in 0..*amount {
+                let amount = parse::<u64>(&args[1]).unwrap();
+                for _ in 0..amount {
                     interpreter.run_single_instruction();
                 }
             } else if str.starts_with("b") {
