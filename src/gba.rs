@@ -1450,7 +1450,7 @@ impl Interpreter {
     }
 
     pub fn do_render(&mut self) -> () {
-        let bg_tile_start = self.cond_memory_bit(constants::LCDC, 3, 0x9800, 0x9C00);
+        let bg_tile_map = self.cond_memory_bit(constants::LCDC, 3, 0x9800, 0x9C00);
         let tile_start = self.cond_memory_bit(constants::LCDC, 4, 0x8800, 0x8000);
         let scx = self.read_memory(constants::SCX);
         let scy = self.read_memory(constants::SCY);
@@ -1465,7 +1465,7 @@ impl Interpreter {
                     self.shade_at_point(
                         shifted_x as u16,
                         shifted_y as u16,
-                        bg_tile_start,
+                        bg_tile_map,
                         tile_start,
                     ),
                 );
@@ -1475,10 +1475,10 @@ impl Interpreter {
     }
 
     // 0 <= x, y <= 256
-    fn shade_at_point(&self, x: u16, y: u16, bg_tile_start: u16, tile_start: u16) -> u8 {
+    fn shade_at_point(&self, x: u16, y: u16, bg_tile_map: u16, tile_start: u16) -> u8 {
         let tile_y = y / 8;
         let tile_x = x / 8;
-        let bg_tile = self.read_memory(bg_tile_start + (tile_y * 32) + tile_x);
+        let bg_tile = self.read_memory(bg_tile_map + (tile_y * 32) + tile_x);
         let starting_address = tile_start + ((bg_tile as u16) * 16);
         let inner_tile_x = x % 8;
         let inner_tile_y = y % 8;
