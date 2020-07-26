@@ -199,13 +199,23 @@ fn main() -> Result<(), std::io::Error> {
             }
             buttons_to_release = vec![];
 
+            let mut press = |k| {
+                inter.push_button(k);
+                buttons_to_release.push(k);
+            };
             for c in rx.try_iter() {
                 match c {
                     Key::Ctrl('c') | Key::Char('q') => return Ok(()),
-                    Key::Char('\n') => {
-                        inter.push_button(JoypadButton::Start);
-                        buttons_to_release.push(JoypadButton::Start);
-                    },
+                    Key::Char('\n') => press(JoypadButton::Start),
+                    Key::Char('a') => press(JoypadButton::A),
+                    Key::Char('z') | Key::Char(';') | Key::Char('s') | Key::Char('o') => {
+                        press(JoypadButton::B)
+                    }
+                    Key::Char(' ') => press(JoypadButton::Select),
+                    Key::Up => press(JoypadButton::Up),
+                    Key::Down => press(JoypadButton::Down),
+                    Key::Left => press(JoypadButton::Left),
+                    Key::Right => press(JoypadButton::Right),
                     _ => (),
                 }
             }
