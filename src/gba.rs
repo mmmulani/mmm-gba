@@ -1606,7 +1606,7 @@ impl Interpreter {
                 } else {
                     tile_start
                 };
-                let tile_address = 0x8000 * ((tile_number as u16) * 16);
+                let tile_address = 0x8000 + ((tile_number as u16) * 16);
                 let adjusted_tile_line = (tile_line_to_render & 7) as u16;
                 for pixel_x in 0..8 {
                     // TODO: Handle x flip.
