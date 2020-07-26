@@ -554,7 +554,7 @@ struct Memory {
 }
 
 pub struct ScreenOutput {
-    screen: Vec<(bool, u8)>,
+    screen: Vec<u8>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -644,7 +644,7 @@ impl Interpreter {
                 enable_flag: 0x00,
                 halted: false,
             },
-            screen_output: ScreenOutput { screen: vec![] },
+            screen_output: ScreenOutput { screen: vec![0; 160 * 144] },
             joypad_input: JoypadInput {
                 pressed_keys: HashSet::new(),
                 select: JoypadSelectFilter::Undetermined,
@@ -1052,7 +1052,6 @@ impl Interpreter {
                 0..=142 | 144..=152 => old_ly + 1,
                 143 => {
                     self.set_interrupt(InterruptBit::VBlank);
-                    self.do_render();
                     old_ly + 1
                 }
                 153 => 0,
@@ -1529,39 +1528,31 @@ impl Interpreter {
         if x >= 160 || y >= 144 {
             0
         } else {
-            self.screen_output.screen[y * 160 + x].1
+            self.screen_output.screen[y * 160 + x]
         }
     }
 
-    pub fn do_render(&mut self) -> () {
+    pub fn do_render_line(&mut self, line: u8) -> () {
+        // 0 <= line <= 143
         let bg_tile_map = self.cond_memory_bit(constants::LCDC, 3, 0x9800, 0x9C00);
         let tile_start = self.cond_memory_bit(constants::LCDC, 4, 0x8800, 0x8000);
         let signed_tile = !self.read_memory_bit(constants::LCDC, 4);
         let scx = self.read_memory(constants::SCX);
         let scy = self.read_memory(constants::SCY);
-        let mut new_screen = vec![(false, 0); 160 * 144];
-        for y in 0..144 {
-            for x in 0..160 {
-                let index: usize = (160 * y) + x;
-                let shifted_x = ((scx as usize) + x) % 256;
-                let shifted_y = ((scy as usize) + y) % 256;
-                new_screen[index] = (
-                    true,
-                    self.shade_at_point(
-                        shifted_x as u16,
-                        shifted_y as u16,
-                        bg_tile_map,
-                        tile_start,
-                        signed_tile,
-                    ),
+        let y = line as usize;
+        for x in 0..160 {
+            let index: usize = (160 * y) + x;
+            let shifted_x = ((scx as usize) + x) % 256;
+            let shifted_y = ((scy as usize) + y) % 256;
+            self.screen_output.screen[index] =
+                self.shade_at_point(
+                    shifted_x as u16,
+                    shifted_y as u16,
+                    bg_tile_map,
+                    tile_start,
+                    signed_tile,
                 );
-            }
         }
-        self.screen_output.screen = new_screen;
-    }
-
-    pub fn do_render_line(&mut self, line: u8) -> () {
-        //println!("at this moment, lcdc {:X}", self.read_memory(constants::LCDC));
     }
 
     // 0 <= x, y <= 256
