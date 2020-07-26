@@ -1609,7 +1609,6 @@ impl Interpreter {
                 let tile_address = 0x8000 + ((tile_number as u16) * 16);
                 let adjusted_tile_line = (tile_line_to_render & 7) as u16;
                 for pixel_x in 0..8 {
-                    // TODO: Handle x flip.
                     if x + pixel_x < 8 || x + pixel_x - 8 >= 160 {
                         continue;
                     }
@@ -1618,7 +1617,7 @@ impl Interpreter {
 
                     let lsb_data = self.read_memory(tile_address + (adjusted_tile_line * 2));
                     let msb_data = self.read_memory(tile_address + (adjusted_tile_line * 2) + 1);
-                    let bit_picker = 1 << (7 - pixel_x);
+                    let bit_picker = 1 << if x_flip { pixel_x } else { 7 - pixel_x };
                     // TODO: Read from palette.
                     let shade = (if (msb_data & bit_picker) != 0 {
                         0b10
