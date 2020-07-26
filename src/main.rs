@@ -14,9 +14,7 @@ use std::env;
 use std::io::{stdin, stdout, Write};
 use std::rc::Rc;
 use std::sync::mpsc;
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::TryRecvError;
-use std::{thread, time};
+use std::thread;
 
 use parse_int::parse;
 
