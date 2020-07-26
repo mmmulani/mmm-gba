@@ -1430,7 +1430,7 @@ impl Interpreter {
             }
             constants::JOYPAD => {
                 // TODO: figure out what to do when multiple bits are set
-                if value & 0x30 != 0 {
+                if value & 0x30 == 0x30 {
                     self.joypad_input.select = JoypadSelectFilter::Undetermined
                 } else if value & 0x20 != 0 {
                     self.joypad_input.select = JoypadSelectFilter::Direction
@@ -1601,7 +1601,7 @@ impl Interpreter {
         if !self.joypad_input.pressed_keys.contains(&button)
             && joypad_button_type(button) == self.joypad_input.select
         {
-            self.set_interrupt(InterruptBit::Joypad)
+            self.set_interrupt(InterruptBit::Joypad);
         }
         self.joypad_input.pressed_keys.insert(button);
     }

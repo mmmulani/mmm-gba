@@ -5,6 +5,8 @@ use cursive::traits::*;
 use cursive::views::{EditView, LinearLayout, NamedView, ScrollView, TextView};
 use cursive::Cursive;
 
+use gba::JoypadButton;
+
 use terminal_size::{terminal_size, Height, Width};
 
 use std::cell::RefCell;
@@ -164,6 +166,7 @@ fn main() -> Result<(), std::io::Error> {
 
         let mut inter = ref_inter.borrow_mut();
         let mut stdout = stdout().into_raw_mode().unwrap();
+        let mut buttons_to_release: Vec<JoypadButton> = vec![];
         loop {
             for _i in 0..70000 {
                 inter.run_single_instruction();
@@ -190,15 +193,24 @@ fn main() -> Result<(), std::io::Error> {
                 println!("\x1b[m\r");
             }
             println!("\x1b[0;37m█████████████████████████████████████████████████\x1b[m\r");
-            stdout.flush().unwrap();
 
-            match rx.try_recv() {
-                Ok(c) => match c {
-                    Key::Ctrl('c') | Key::Char('q') => return Ok(()),
-                    _ => (),
-                },
-                _ => (),
+            for p in buttons_to_release {
+                inter.release_button(p);
             }
+            buttons_to_release = vec![];
+
+            for c in rx.try_iter() {
+                match c {
+                    Key::Ctrl('c') | Key::Char('q') => return Ok(()),
+                    Key::Char('\n') => {
+                        inter.push_button(JoypadButton::Start);
+                        buttons_to_release.push(JoypadButton::Start);
+                    },
+                    _ => (),
+                }
+            }
+
+            stdout.flush().unwrap();
 
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
