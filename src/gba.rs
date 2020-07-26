@@ -644,7 +644,9 @@ impl Interpreter {
                 enable_flag: 0x00,
                 halted: false,
             },
-            screen_output: ScreenOutput { screen: vec![0; 160 * 144] },
+            screen_output: ScreenOutput {
+                screen: vec![0; 160 * 144],
+            },
             joypad_input: JoypadInput {
                 pressed_keys: HashSet::new(),
                 select: JoypadSelectFilter::Undetermined,
@@ -1544,14 +1546,13 @@ impl Interpreter {
             let index: usize = (160 * y) + x;
             let shifted_x = ((scx as usize) + x) % 256;
             let shifted_y = ((scy as usize) + y) % 256;
-            self.screen_output.screen[index] =
-                self.shade_at_point(
-                    shifted_x as u16,
-                    shifted_y as u16,
-                    bg_tile_map,
-                    tile_start,
-                    signed_tile,
-                );
+            self.screen_output.screen[index] = self.shade_at_point(
+                shifted_x as u16,
+                shifted_y as u16,
+                bg_tile_map,
+                tile_start,
+                signed_tile,
+            );
         }
     }
 
