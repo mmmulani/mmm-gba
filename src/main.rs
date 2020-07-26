@@ -169,7 +169,7 @@ fn main() -> Result<(), std::io::Error> {
             for _i in 0..70000 {
                 inter.run_single_instruction();
             }
-            print!("\x1b[H");
+            print!("\x1b[H\x1b[?25l");
             for y in (0..144).step_by(2) {
                 for x in 0..160 {
                     let top = inter.pixel_at(x, y);
