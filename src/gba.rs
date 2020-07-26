@@ -1541,29 +1541,100 @@ impl Interpreter {
             return;
         }
 
-        // TODO: Handle LCDC.0 and set white.
-        let bg_tile_map = self.cond_memory_bit(constants::LCDC, 3, 0x9800, 0x9C00);
-        let tile_start = self.cond_memory_bit(constants::LCDC, 4, 0x8800, 0x8000);
-        let signed_tile = !self.read_memory_bit(constants::LCDC, 4);
-        let scx = self.read_memory(constants::SCX);
-        let scy = self.read_memory(constants::SCY);
-        let y = line as usize;
-        for x in 0..160 {
-            let index: usize = (160 * y) + x;
-            let shifted_x = ((scx as usize) + x) % 256;
-            let shifted_y = ((scy as usize) + y) % 256;
-            self.screen_output.screen[index] = self.bg_shade_at_point(
-                shifted_x as u16,
-                shifted_y as u16,
-                bg_tile_map,
-                tile_start,
-                signed_tile,
-            );
+        {
+            // TODO: Handle LCDC.0 and set white.
+            let bg_tile_map = self.cond_memory_bit(constants::LCDC, 3, 0x9800, 0x9C00);
+            let tile_start = self.cond_memory_bit(constants::LCDC, 4, 0x8800, 0x8000);
+            let signed_tile = !self.read_memory_bit(constants::LCDC, 4);
+            let scx = self.read_memory(constants::SCX);
+            let scy = self.read_memory(constants::SCY);
+            let y = line as usize;
+            for x in 0..160 {
+                let index: usize = (160 * y) + x;
+                let shifted_x = ((scx as usize) + x) % 256;
+                let shifted_y = ((scy as usize) + y) % 256;
+                self.screen_output.screen[index] = self.bg_shade_at_point(
+                    shifted_x as u16,
+                    shifted_y as u16,
+                    bg_tile_map,
+                    tile_start,
+                    signed_tile,
+                );
+            }
         }
 
         if self.read_memory_bit(constants::LCDC, 5) {
             let window_tile_map = self.cond_memory_bit(constants::LCDC, 6, 0x9800, 0x9C00);
             // TODO: Finish window implementation
+        }
+
+        // Sprite rendering.
+        if self.read_memory_bit(constants::LCDC, 1) {
+            let large_size = self.read_memory_bit(constants::LCDC, 2);
+            let mut sprites_used = 0;
+            for i in 0..40 {
+                let y = self.read_memory(constants::SPRITE_TABLE + (i * 4));
+                let x = self.read_memory(constants::SPRITE_TABLE + (i * 4) + 1);
+                let tile_start = self.read_memory(constants::SPRITE_TABLE + (i * 4) + 2);
+                let attributes = self.read_memory(constants::SPRITE_TABLE + (i * 4) + 3);
+
+                // Determine if this sprite affects our line.
+                if y == 0
+                    || y >= 160
+                    || !(y <= line + 16 && line < y)
+                    || (!large_size && y <= line + 8)
+                    || sprites_used >= 10
+                {
+                    continue;
+                }
+
+                sprites_used = sprites_used + 1;
+
+                // If the sprite is hidden due to its x-coordinate, it is still counted for
+                // the purpose of only allowing 10 sprites.
+                if x == 0 || x >= 168 {
+                    continue;
+                }
+
+                let y_flip = attributes & (1 << 6) != 0;
+                let x_flip = attributes & (1 << 5) != 0;
+                let palette = (attributes & (1 << 4)) >> 4;
+
+                let tile_line_to_render = if y_flip { y - line - 1 } else { line + 16 - y };
+                let tile_number = if large_size {
+                    (tile_start & 0xFE) + if tile_line_to_render > 7 { 1 } else { 0 }
+                } else {
+                    tile_start
+                };
+                let tile_address = 0x8000 * ((tile_number as u16) * 16);
+                let adjusted_tile_line = (tile_line_to_render & 7) as u16;
+                for pixel_x in 0..8 {
+                    // TODO: Handle x flip.
+                    if x + pixel_x < 8 || x + pixel_x - 8 >= 160 {
+                        continue;
+                    }
+
+                    let final_x = x + pixel_x - 8;
+
+                    let lsb_data = self.read_memory(tile_address + (adjusted_tile_line * 2));
+                    let msb_data = self.read_memory(tile_address + (adjusted_tile_line * 2) + 1);
+                    let bit_picker = 1 << (7 - pixel_x);
+                    // TODO: Read from palette.
+                    let shade = (if (msb_data & bit_picker) != 0 {
+                        0b10
+                    } else {
+                        0b0
+                    }) | (if (lsb_data & bit_picker) != 0 {
+                        0b1
+                    } else {
+                        0b0
+                    });
+                    if shade != 0 {
+                        let index: usize = (160 * (line as usize)) + (final_x as usize);
+                        self.screen_output.screen[index] = shade;
+                    }
+                }
+            }
         }
     }
 
@@ -1600,11 +1671,7 @@ impl Interpreter {
         shade
     }
 
-    fn window_shade_at_point(
-        &self,
-        x: u16,
-        y: u16
-    ) -> Option<u8> {
+    fn window_shade_at_point(&self, x: u16, y: u16) -> Option<u8> {
         // 7 <= wx <= 166
         let wx = self.read_memory(constants::WX) as u16;
         // 0 <= wy <= 143
