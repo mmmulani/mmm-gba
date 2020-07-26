@@ -1536,6 +1536,12 @@ impl Interpreter {
 
     pub fn do_render_line(&mut self, line: u8) -> () {
         // 0 <= line <= 143
+
+        if !self.read_memory_bit(constants::LCDC, 7) {
+            return;
+        }
+
+        // TODO: Handle LCDC.0 and set white.
         let bg_tile_map = self.cond_memory_bit(constants::LCDC, 3, 0x9800, 0x9C00);
         let tile_start = self.cond_memory_bit(constants::LCDC, 4, 0x8800, 0x8000);
         let signed_tile = !self.read_memory_bit(constants::LCDC, 4);
@@ -1546,7 +1552,7 @@ impl Interpreter {
             let index: usize = (160 * y) + x;
             let shifted_x = ((scx as usize) + x) % 256;
             let shifted_y = ((scy as usize) + y) % 256;
-            self.screen_output.screen[index] = self.shade_at_point(
+            self.screen_output.screen[index] = self.bg_shade_at_point(
                 shifted_x as u16,
                 shifted_y as u16,
                 bg_tile_map,
@@ -1554,10 +1560,15 @@ impl Interpreter {
                 signed_tile,
             );
         }
+
+        if self.read_memory_bit(constants::LCDC, 5) {
+            let window_tile_map = self.cond_memory_bit(constants::LCDC, 6, 0x9800, 0x9C00);
+            // TODO: Finish window implementation
+        }
     }
 
     // 0 <= x, y <= 256
-    fn shade_at_point(
+    fn bg_shade_at_point(
         &self,
         x: u16,
         y: u16,
@@ -1587,6 +1598,29 @@ impl Interpreter {
             0b0
         });
         shade
+    }
+
+    fn window_shade_at_point(
+        &self,
+        x: u16,
+        y: u16
+    ) -> Option<u8> {
+        // 7 <= wx <= 166
+        let wx = self.read_memory(constants::WX) as u16;
+        // 0 <= wy <= 143
+        let wy = self.read_memory(constants::WY) as u16;
+        if wy > 143 || wx < 7 || wx > 166 {
+            return None;
+        }
+
+        if wy > y || wx - 7 > x {
+            return None;
+        }
+
+        let tile_y = (y - wy) / 8;
+        let tile_x = (x + 7 - wx) / 8;
+
+        None
     }
 
     pub fn push_button(&mut self, button: JoypadButton) -> () {
