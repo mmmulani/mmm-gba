@@ -6,6 +6,7 @@ const NINTENDO_LOGO: [u8; 48] = [
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::io::Write;
@@ -556,6 +557,43 @@ pub struct ScreenOutput {
     screen: Vec<(bool, u8)>,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub enum JoypadButton {
+    Down,
+    Up,
+    Left,
+    Right,
+    A,
+    B,
+    Start,
+    Select,
+}
+
+fn joypad_button_type(button: JoypadButton) -> JoypadSelectFilter {
+    match button {
+        JoypadButton::Down => JoypadSelectFilter::Direction,
+        JoypadButton::Up => JoypadSelectFilter::Direction,
+        JoypadButton::Left => JoypadSelectFilter::Direction,
+        JoypadButton::Right => JoypadSelectFilter::Direction,
+        JoypadButton::A => JoypadSelectFilter::Button,
+        JoypadButton::B => JoypadSelectFilter::Button,
+        JoypadButton::Start => JoypadSelectFilter::Button,
+        JoypadButton::Select => JoypadSelectFilter::Button,
+    }
+}
+
+#[derive(PartialEq, Eq, Hash)]
+pub enum JoypadSelectFilter {
+    Undetermined,
+    Button,
+    Direction,
+}
+
+pub struct JoypadInput {
+    pressed_keys: HashSet<JoypadButton>,
+    select: JoypadSelectFilter,
+}
+
 pub struct Interpreter {
     pub rom: ROM,
     pub register_state: RegisterState,
@@ -564,6 +602,7 @@ pub struct Interpreter {
     pub output: String,
     pub interrupts: Interrupts,
     pub screen_output: ScreenOutput,
+    pub joypad_input: JoypadInput,
 }
 
 impl Interpreter {
@@ -606,6 +645,10 @@ impl Interpreter {
                 halted: false,
             },
             screen_output: ScreenOutput { screen: vec![] },
+            joypad_input: JoypadInput {
+                pressed_keys: HashSet::new(),
+                select: JoypadSelectFilter::Undetermined,
+            },
         };
         ret.save_memory(constants::LCDC, 0x91);
         ret
@@ -1272,6 +1315,16 @@ impl Interpreter {
             0xE000..=0xFDFF => panic!("unimplemented echo memory"),
             0xFF0F => self.interrupts.request_flag,
             0xFFFF => self.interrupts.enable_flag,
+            constants::JOYPAD => {
+                self.joypad_value()
+                    | (match self.joypad_input.select {
+                        JoypadSelectFilter::Undetermined => 0x30,
+                        JoypadSelectFilter::Button => 0x10,
+                        JoypadSelectFilter::Direction => 0x20,
+                    })
+                    // GameBoy and GameBoy Pocket return the highest 2 bits as on
+                    | 0xC0
+            }
             0xFE00..=0xFFFE => self.memory.other_ram[address as usize],
         }
     }
@@ -1291,7 +1344,10 @@ impl Interpreter {
 
     fn save_memory(&mut self, address: u16, value: u8) -> () {
         if address == constants::LCDC && value != 0x91 {
-            println!("saving value to LCDC {:X}, PC {:X}", value, self.program_state.program_counter);
+            println!(
+                "saving value to LCDC {:X}, PC {:X}",
+                value, self.program_state.program_counter
+            );
             CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             if CALL_COUNT.load(std::sync::atomic::Ordering::SeqCst) == 50 {
                 panic!("");
@@ -1370,6 +1426,16 @@ impl Interpreter {
                 let source = (value as u16) << 8;
                 for i in 0..0x9F {
                     self.save_memory(0xFE00 + i, self.read_memory(source + i));
+                }
+            }
+            constants::JOYPAD => {
+                // TODO: figure out what to do when multiple bits are set
+                if value & 0x30 != 0 {
+                    self.joypad_input.select = JoypadSelectFilter::Undetermined
+                } else if value & 0x20 != 0 {
+                    self.joypad_input.select = JoypadSelectFilter::Direction
+                } else if value & 0x10 != 0 {
+                    self.joypad_input.select = JoypadSelectFilter::Button
                 }
             }
             0xFF51..=0xFF55 => panic!("cgb vram"),
@@ -1499,7 +1565,14 @@ impl Interpreter {
     }
 
     // 0 <= x, y <= 256
-    fn shade_at_point(&self, x: u16, y: u16, bg_tile_map: u16, tile_start: u16, signed_tile: bool) -> u8 {
+    fn shade_at_point(
+        &self,
+        x: u16,
+        y: u16,
+        bg_tile_map: u16,
+        tile_start: u16,
+        signed_tile: bool,
+    ) -> u8 {
         let tile_y = y / 8;
         let tile_x = x / 8;
         let mut bg_tile = self.read_memory(bg_tile_map + (tile_y * 32) + tile_x);
@@ -1522,5 +1595,42 @@ impl Interpreter {
             0b0
         });
         shade
+    }
+
+    pub fn push_button(&mut self, button: JoypadButton) -> () {
+        if !self.joypad_input.pressed_keys.contains(&button)
+            && joypad_button_type(button) == self.joypad_input.select
+        {
+            self.set_interrupt(InterruptBit::Joypad)
+        }
+        self.joypad_input.pressed_keys.insert(button);
+    }
+
+    pub fn release_button(&mut self, button: JoypadButton) -> () {
+        self.joypad_input.pressed_keys.remove(&button);
+    }
+
+    fn joypad_value(&self) -> u8 {
+        let mut value = 0xF;
+        for button in self.joypad_input.pressed_keys.iter() {
+            if self.joypad_input.select == JoypadSelectFilter::Button {
+                value &= match button {
+                    JoypadButton::A => !0x1,
+                    JoypadButton::B => !0x2,
+                    JoypadButton::Select => !0x4,
+                    JoypadButton::Start => !0x8,
+                    _ => 0xF,
+                }
+            } else if self.joypad_input.select == JoypadSelectFilter::Direction {
+                value &= match button {
+                    JoypadButton::Right => !0x1,
+                    JoypadButton::Left => !0x2,
+                    JoypadButton::Up => !0x4,
+                    JoypadButton::Down => !0x8,
+                    _ => 0xF,
+                }
+            }
+        }
+        value
     }
 }
