@@ -1,4 +1,5 @@
 extern crate cursive;
+extern crate termion;
 
 use cursive::traits::*;
 use cursive::views::{EditView, LinearLayout, NamedView, ScrollView, TextView};
@@ -8,9 +9,18 @@ use terminal_size::{terminal_size, Height, Width};
 
 use std::cell::RefCell;
 use std::env;
+use std::io::{stdin, stdout, Write};
 use std::rc::Rc;
+use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::TryRecvError;
+use std::{thread, time};
 
 use parse_int::parse;
+
+use termion::event::Key;
+use termion::input::TermRead;
+use termion::raw::IntoRawMode;
 
 mod gba;
 
@@ -145,7 +155,15 @@ fn main() -> Result<(), std::io::Error> {
             }
         }
 
+        let (tx, rx) = mpsc::channel::<termion::event::Key>();
+        thread::spawn(move || loop {
+            for c in stdin().keys() {
+                tx.send(c.unwrap()).unwrap();
+            }
+        });
+
         let mut inter = ref_inter.borrow_mut();
+        let mut stdout = stdout().into_raw_mode().unwrap();
         loop {
             for _i in 0..70000 {
                 inter.run_single_instruction();
@@ -169,9 +187,19 @@ fn main() -> Result<(), std::io::Error> {
                     };
                     print!("\x1b[0;{};{}m▀", top_str, bottom_str);
                 }
-                println!("\x1b[m");
+                println!("\x1b[m\r");
             }
-            println!("\x1b[0;37m█████████████████████████████████████████████████\x1b[m");
+            println!("\x1b[0;37m█████████████████████████████████████████████████\x1b[m\r");
+            stdout.flush().unwrap();
+
+            match rx.try_recv() {
+                Ok(c) => match c {
+                    Key::Ctrl('c') | Key::Char('q') => return Ok(()),
+                    _ => (),
+                },
+                _ => (),
+            }
+
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
     }
