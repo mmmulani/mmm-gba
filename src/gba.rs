@@ -1344,16 +1344,6 @@ impl Interpreter {
     }
 
     fn save_memory(&mut self, address: u16, value: u8) -> () {
-        if address == constants::LCDC && value != 0x91 {
-            println!(
-                "saving value to LCDC {:X}, PC {:X}",
-                value, self.program_state.program_counter
-            );
-            CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            if CALL_COUNT.load(std::sync::atomic::Ordering::SeqCst) == 50 {
-                panic!("");
-            }
-        }
         let modified_value = match address {
             constants::LY => 0,
             _ => value,
