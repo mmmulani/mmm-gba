@@ -1669,7 +1669,8 @@ impl Interpreter {
         } else {
             0b0
         });
-        shade
+        let palette_shade = (self.read_memory(constants::BG_PALETTE) >> (shade * 2)) & 0b11;
+        palette_shade
     }
 
     fn window_shade_at_point(&self, x: u16, y: u16) -> Option<u8> {
