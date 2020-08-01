@@ -209,6 +209,11 @@ fn main() -> Result<(), std::io::Error> {
                     Key::Char('z') | Key::Char(';') | Key::Char('s') | Key::Char('o') => {
                         press(JoypadButton::B)
                     }
+                    Key::Char('p') => {
+                        println!("registers: {:X?}\r", inter.register_state);
+                        println!("program state: {:X?}\r", inter.program_state);
+                        return Ok(());
+                    }
                     Key::Char(' ') => press(JoypadButton::Select),
                     Key::Up => press(JoypadButton::Up),
                     Key::Down => press(JoypadButton::Down),
