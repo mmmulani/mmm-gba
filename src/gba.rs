@@ -1629,8 +1629,10 @@ impl Interpreter {
                         0b0
                     });
                     if shade != 0 {
+                        let palette_address = if palette == 0 { constants::SPRITE_PALETTE_0 } else { constants::SPRITE_PALETTE_1 };
+                        let palette_shade = (self.read_memory(palette_address) >> (shade * 2)) & 0b11;
                         let index: usize = (160 * (line as usize)) + (final_x as usize);
-                        self.screen_output.screen[index] = shade;
+                        self.screen_output.screen[index] = palette_shade;
                     }
                 }
             }

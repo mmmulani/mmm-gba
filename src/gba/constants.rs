@@ -6,3 +6,5 @@ pub const WX: u16 = 0xFF4B;
 pub const LY: u16 = 0xFF44;
 pub const JOYPAD: u16 = 0xFF00;
 pub const SPRITE_TABLE: u16 = 0xFE00;
+pub const SPRITE_PALETTE_0: u16 = 0xFF48;
+pub const SPRITE_PALETTE_1: u16 = 0xFF49;
