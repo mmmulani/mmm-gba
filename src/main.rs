@@ -175,16 +175,16 @@ fn main() -> Result<(), std::io::Error> {
                     let top = inter.pixel_at(x, y);
                     let bottom = inter.pixel_at(x, y + 1);
                     let top_str = match top {
-                        0 => "30",
-                        1 => "90",
-                        2 => "37",
-                        _ => "97",
+                        0 => "97",
+                        1 => "37",
+                        2 => "90",
+                        _ => "30",
                     };
                     let bottom_str = match bottom {
-                        0 => "40",
-                        1 => "100",
-                        2 => "47",
-                        _ => "107",
+                        0 => "107",
+                        1 => "47",
+                        2 => "100",
+                        _ => "40",
                     };
                     print!("\x1b[0;{};{}m▀", top_str, bottom_str);
                 }
