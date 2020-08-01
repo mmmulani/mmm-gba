@@ -1541,8 +1541,10 @@ impl Interpreter {
             return;
         }
 
+        let mut background_line = vec![0; 160];
+        // NOTE: This bit is handled differently in CGB.
+        let should_clear_bg = !self.read_memory_bit(constants::LCDC, 0);
         {
-            // TODO: Handle LCDC.0 and set white.
             let bg_tile_map = self.cond_memory_bit(constants::LCDC, 3, 0x9800, 0x9C00);
             let tile_start = self.cond_memory_bit(constants::LCDC, 4, 0x8800, 0x8000);
             let signed_tile = !self.read_memory_bit(constants::LCDC, 4);
@@ -1553,17 +1555,23 @@ impl Interpreter {
                 let index: usize = (160 * y) + x;
                 let shifted_x = ((scx as usize) + x) % 256;
                 let shifted_y = ((scy as usize) + y) % 256;
-                self.screen_output.screen[index] = self.bg_shade_at_point(
-                    shifted_x as u16,
-                    shifted_y as u16,
-                    bg_tile_map,
-                    tile_start,
-                    signed_tile,
-                );
+                let shade = if should_clear_bg {
+                    0
+                } else {
+                    self.bg_shade_at_point(
+                        shifted_x as u16,
+                        shifted_y as u16,
+                        bg_tile_map,
+                        tile_start,
+                        signed_tile,
+                    )
+                };
+                self.screen_output.screen[index] = shade;
+                background_line[x] = shade;
             }
         }
 
-        if self.read_memory_bit(constants::LCDC, 5) {
+        if self.read_memory_bit(constants::LCDC, 0) && self.read_memory_bit(constants::LCDC, 5) {
             let window_tile_map = self.cond_memory_bit(constants::LCDC, 6, 0x9800, 0x9C00);
             // TODO: Finish window implementation
         }
@@ -1596,9 +1604,15 @@ impl Interpreter {
                     continue;
                 }
 
+                let obj_behind_bg = attributes & (1 << 7) != 0;
                 let y_flip = attributes & (1 << 6) != 0;
                 let x_flip = attributes & (1 << 5) != 0;
                 let palette = (attributes & (1 << 4)) >> 4;
+                let palette_address = if palette == 0 {
+                    constants::SPRITE_PALETTE_0
+                } else {
+                    constants::SPRITE_PALETTE_1
+                };
 
                 let tile_line_to_render = if y_flip { y - line - 1 } else { line + 16 - y };
                 let tile_number = if large_size {
@@ -1613,25 +1627,16 @@ impl Interpreter {
                         continue;
                     }
 
-                    let final_x = x + pixel_x - 8;
-
-                    let lsb_data = self.read_memory(tile_address + (adjusted_tile_line * 2));
-                    let msb_data = self.read_memory(tile_address + (adjusted_tile_line * 2) + 1);
-                    let bit_picker = 1 << if x_flip { pixel_x } else { 7 - pixel_x };
-                    // TODO: Read from palette.
-                    let shade = (if (msb_data & bit_picker) != 0 {
-                        0b10
-                    } else {
-                        0b0
-                    }) | (if (lsb_data & bit_picker) != 0 {
-                        0b1
-                    } else {
-                        0b0
-                    });
-                    if shade != 0 {
-                        let palette_address = if palette == 0 { constants::SPRITE_PALETTE_0 } else { constants::SPRITE_PALETTE_1 };
-                        let palette_shade = (self.read_memory(palette_address) >> (shade * 2)) & 0b11;
-                        let index: usize = (160 * (line as usize)) + (final_x as usize);
+                    let inner_tile_x = if x_flip { 7 - pixel_x } else { pixel_x };
+                    let (shade, palette_shade) = self.shade_at_point(
+                        tile_address,
+                        adjusted_tile_line,
+                        inner_tile_x,
+                        palette_address,
+                    );
+                    let final_x = (x + pixel_x - 8) as usize;
+                    if shade != 0 && (!obj_behind_bg || background_line[final_x] == 0) {
+                        let index: usize = (160 * (line as usize)) + final_x;
                         self.screen_output.screen[index] = palette_shade;
                     }
                 }
@@ -1655,11 +1660,27 @@ impl Interpreter {
             bg_tile = (((bg_tile as i8) as i16) + 128) as u8;
         }
         let starting_address = tile_start + ((bg_tile as u16) * 16);
-        let inner_tile_x = x % 8;
+        let inner_tile_x = (x % 8) as u8;
         let inner_tile_y = y % 8;
-        let lsb_data = self.read_memory(starting_address + (inner_tile_y * 2));
-        let msb_data = self.read_memory(starting_address + (inner_tile_y * 2) + 1);
-        let bit_picker = 1 << (7 - inner_tile_x);
+        let (_shade, palette_shade) = self.shade_at_point(
+            starting_address,
+            inner_tile_y,
+            inner_tile_x,
+            constants::BG_PALETTE,
+        );
+        palette_shade
+    }
+
+    fn shade_at_point(
+        &self,
+        tile_block: u16,
+        tile_number: u16,
+        tile_x: u8,
+        palette_address: u16,
+    ) -> (u8, u8) {
+        let lsb_data = self.read_memory(tile_block + (tile_number * 2));
+        let msb_data = self.read_memory(tile_block + (tile_number * 2) + 1);
+        let bit_picker = 1 << (7 - tile_x);
         let shade = (if (msb_data & bit_picker) != 0 {
             0b10
         } else {
@@ -1669,8 +1690,8 @@ impl Interpreter {
         } else {
             0b0
         });
-        let palette_shade = (self.read_memory(constants::BG_PALETTE) >> (shade * 2)) & 0b11;
-        palette_shade
+        let palette_shade = (self.read_memory(palette_address) >> (shade * 2)) & 0b11;
+        (shade, palette_shade)
     }
 
     fn window_shade_at_point(&self, x: u16, y: u16) -> Option<u8> {
