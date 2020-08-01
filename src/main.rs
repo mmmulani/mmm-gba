@@ -165,10 +165,23 @@ fn main() -> Result<(), std::io::Error> {
         let mut inter = ref_inter.borrow_mut();
         let mut stdout = stdout().into_raw_mode().unwrap();
         let mut buttons_to_release: Vec<JoypadButton> = vec![];
+        let start_time = std::time::Instant::now();
         loop {
-            for _i in 0..70000 {
-                inter.run_single_instruction();
+            loop {
+                for _i in 0..5000 {
+                    inter.run_single_instruction();
+                }
+                // The CPU runs at 4,194,304 cycles per second.
+                // We spin until the GameBoy is farther ahead than us.
+                let elapsed_real = start_time.elapsed();
+                let gba_nanoseconds = inter.program_state.cycle_count * 1000000000 / 4191304;
+                let gameboy_elapsed = std::time::Duration::from_nanos(gba_nanoseconds);
+                if gameboy_elapsed > elapsed_real {
+                    std::thread::sleep(gameboy_elapsed - elapsed_real);
+                    break;
+                }
             }
+
             print!("\x1b[H\x1b[?25l");
             for y in (0..144).step_by(2) {
                 for x in 0..160 {
@@ -224,8 +237,6 @@ fn main() -> Result<(), std::io::Error> {
             }
 
             stdout.flush().unwrap();
-
-            std::thread::sleep(std::time::Duration::from_millis(100));
         }
     }
 
