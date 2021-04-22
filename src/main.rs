@@ -240,7 +240,7 @@ fn main() -> Result<(), std::io::Error> {
         }
     }
 
-    let mut app = Cursive::default();
+    let mut app = cursive::default();
 
     fn update_screen(c: &mut Cursive, interpreter: &gba::Interpreter) {
         let instructions = interpreter.get_next_instructions();
